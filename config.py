@@ -39,8 +39,16 @@ def _build_tradingagents_config() -> dict:
     # config keys — agent factories will start consuming them in a
     # follow-up; setting them here is a no-op until then.
     cfg["structured_output_llm"] = "openai/gpt-oss-120b:free"
-    cfg["quant_llm"] = "qwen/qwen3-next-80b-a3b-instruct:free"
-    cfg["light_llm"] = "meta-llama/llama-3.3-70b-instruct:free"
+    # quant_llm normally routes Market/Options/Risk to a quant-leaning model.
+    # qwen/qwen3-next-80b-a3b-instruct:free is served upstream by Venice,
+    # which has been hard-blocking with persistent 429s. Empty string falls
+    # back to quick_think_llm via _build_role_llms (different upstream).
+    cfg["quant_llm"] = ""
+    # light_llm normally routes Social/News to a small fast model. The free
+    # llama-3.3-70b is hard-capped at 8 RPM, which Social+News blow through
+    # in seconds. Empty falls back to quick_think_llm (gpt-oss-20b:free,
+    # different upstream, no observed cap at our volume).
+    cfg["light_llm"] = ""
     return cfg
 
 

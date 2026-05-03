@@ -180,6 +180,82 @@ An interface will appear showing results as they load, letting you track the age
   <img src="assets/cli/cli_transaction.png" width="100%" style="display: inline-block; margin: 0 2%;">
 </p>
 
+## Screener Pipeline (Fork Addition)
+
+This fork adds a Finviz-driven batch screener (`pipeline.py` plus a thin `run.sh` wrapper) on top of the upstream framework. Each run pulls candidates from Finviz, dedupes against today's already-analyzed tickers, runs each through `TradingAgentsGraph`, and writes one Markdown report per ticker (BLUF up top + every pipeline step as its own section) plus a JSON archive.
+
+### Quick start
+
+```bash
+pip install -e .                          # one-time; pulls finvizfinance + python-dotenv on top of upstream deps
+
+./run.sh --tickers AAPL --dry-run         # preview the queue, no LLM calls or writes
+./run.sh --tickers AAPL,MSFT,NVDA         # analyze a hand-picked list
+./run.sh --max-tickers 5                  # screen Finviz, analyze top 5
+./run.sh --help                           # full CLI surface
+```
+
+Reports land at:
+
+```
+results/
+├── by_ticker/{TICKER}/{YYYYMMDD_HHMMSS}_{TICKER}.{json,md}
+└── by_date/{YYYYMMDD}/{TICKER}_{YYYYMMDD_HHMMSS}.{json,md}   ← relative symlinks
+```
+
+### CLI flags
+
+| Flag | Purpose |
+|---|---|
+| `--tickers AAPL,MSFT,NVDA` | bypass Finviz, analyze a hand-picked list |
+| `--ticker-file path.txt` | read tickers from a file (one per line; `#` comments OK; comma-on-line OK) |
+| `--max-tickers N` | cap the queue (overrides `config.py` `max_tickers_per_run`) |
+| `--dry-run` | resolve the queue and print it, then exit — no LLM calls, no writes |
+| `--rerun-today` | bypass the today-already-run dedup; useful for retrying a partially failed batch |
+| `--filter-overrides "Sector=Technology,Price=Over $20"` | patch the Finviz filter dict from the CLI |
+| `-v` / `-q` | DEBUG / WARNING-and-above log levels |
+
+### New data sources
+
+Beyond the upstream yfinance and Alpha Vantage tools, agents in this fork also call:
+
+- **SEC EDGAR Form 4** (`sec_insider`) — insider buying/selling with cluster summary and a $500k large-purchase flag
+- **Congressional STOCK Act disclosures** (`congress_trades`) — Finnhub primary, Senate Stock Watcher fallback
+- **Options flow** (`options_flow`) — yfinance option chains: P/C ratios, max pain, call/put walls, IV Rank
+- **Macro snapshot** (`macro_data`) — FRED yields / curve / HY credit spread / USD with FAVORABLE / NEUTRAL / UNFAVORABLE rating
+- **Earnings transcript sentiment** (`earnings_transcript`) — Motley Fool scrape + LLM-scored sentiment with hedge-word and Q&A deflection metrics
+- **Sector relative strength** (`sector_analysis`) — SPDR sector ETF vs SPY + 63-day correlations to GLD / USO / BTC-USD / UUP / ^VIX
+
+A new **Options Analyst** agent is included in the analyst chain when `enable_options_analyst=True` (default). Risk debaters receive a macro snapshot and IV-rank snapshot pre-fetched once at run start, so the prompt-only debaters can reason about systemic context without their own tool nodes.
+
+### Optional API keys
+
+In addition to the upstream LLM-provider keys, the screener uses:
+
+```bash
+export FRED_API_KEY=...                              # https://fred.stlouisfed.org/docs/api/api_key.html
+export FINNHUB_API_KEY=...                           # https://finnhub.io  (congressional trades)
+export SEC_USER_AGENT="Your Name your@email.com"     # SEC EDGAR fair-access policy
+```
+
+Each key is optional. When a key is missing, the corresponding dataflow returns a bracketed fallback string that the agent reads as "data unavailable, proceed without it" — the run is never blocked.
+
+### Per-role LLM routing
+
+`config.py` lets you assign different LLMs to specific agent roles (in addition to `deep_think_llm` and `quick_think_llm`):
+
+| Config key | Used by |
+|---|---|
+| `structured_output_llm` | Research Manager, Portfolio Manager |
+| `quant_llm` | Market analyst, Options analyst, three risk debaters |
+| `light_llm` | Social analyst, News analyst |
+
+Empty strings fall back to `deep_think_llm` / `quick_think_llm`. Identical model strings across roles share a single client.
+
+> **Free-tier OpenRouter caveat**: free models route through shared upstream providers with aggressive RPM caps. If a free model 429s persistently, set the affected role-key to `""` (falls back to `quick_think_llm`) or BYOK at [openrouter.ai/settings/integrations](https://openrouter.ai/settings/integrations).
+
+See [`CLAUDE.md`](CLAUDE.md) for the deeper architecture: data flow, vendor router, role-LLM construction, persistence layout, and repo-specific coding conventions.
+
 ## TradingAgents Package
 
 ### Implementation Details

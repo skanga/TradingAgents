@@ -27,20 +27,32 @@ def already_run_today(ticker: str, results_dir: str | Path) -> bool:
 
 
 def build_queue(
-    tickers: list[str], results_dir: str | Path, max: int
+    tickers: list[str],
+    results_dir: str | Path,
+    max: int,
+    rerun_today: bool = False,
 ) -> tuple[list[str], int]:
     """Filter today-already-run tickers, shuffle the remainder, cap at ``max``.
 
     Returns ``(queue, already_run_today_count)``. The caller can derive
     "deferred to next run" as ``len(tickers) - len(queue) - already_run``.
+
+    Set ``rerun_today=True`` to bypass the today-already-run dedup; the
+    returned ``already_run_today_count`` will then be 0 even if some tickers
+    do have today-stamped result files. Useful for retrying a partially
+    failed batch.
     """
-    remaining = [t for t in tickers if not already_run_today(t, results_dir)]
-    already_run = len(tickers) - len(remaining)
+    if rerun_today:
+        remaining = list(tickers)
+        already_run = 0
+    else:
+        remaining = [t for t in tickers if not already_run_today(t, results_dir)]
+        already_run = len(tickers) - len(remaining)
     random.shuffle(remaining)
     queue = remaining[:max]
     logger.info(
-        "build_queue: %d total → %d after dedup (already-run %d) → %d after cap",
-        len(tickers), len(remaining), already_run, len(queue),
+        "build_queue: %d total → %d after dedup (already-run %d, rerun_today=%s) → %d after cap",
+        len(tickers), len(remaining), already_run, rerun_today, len(queue),
     )
     return queue, already_run
 
