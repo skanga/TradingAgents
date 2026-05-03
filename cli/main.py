@@ -19,7 +19,7 @@ from rich.text import Text
 from rich.table import Table
 
 from cli.announcements import fetch_announcements, display_announcements
-from cli.llm_config import LLMConfigOverrides
+from cli.llm_config import LLMConfigOverrides, ResolvedLLMConfig, resolve_llm_config
 from cli.stats_handler import StatsCallbackHandler
 from cli.utils import (
     ask_anthropic_effort,
@@ -509,7 +509,7 @@ def update_display(layout, message_buffer: MessageBuffer, spinner_text=None, sta
     layout["footer"].update(Panel(stats_table, border_style="grey50"))
 
 
-def get_user_selections():
+def get_user_selections(resolved_llm: ResolvedLLMConfig | None = None):
     """Get all user selections before starting the analysis display."""
     # Display ASCII art welcome message
     with open(Path(__file__).parent / "static" / "welcome.txt", encoding="utf-8") as f:
@@ -623,122 +623,64 @@ def get_user_selections():
     depth_from_env = bool(os.environ.get("TRADINGAGENTS_MAX_DEBATE_ROUNDS")) and bool(
         os.environ.get("TRADINGAGENTS_MAX_RISK_ROUNDS")
     )
-    if depth_from_env:
-        selected_research_depth = DEFAULT_CONFIG["max_debate_rounds"]
-        console.print(
-            f"[green]✓ Research depth from environment:[/green] "
-            f"{DEFAULT_CONFIG['max_debate_rounds']} debate / "
-            f"{DEFAULT_CONFIG['max_risk_discuss_rounds']} risk rounds"
-        )
-    else:
-        console.print(
-            create_question_box(
-                "Step 5: Research Depth", "Select your research depth level"
-            )
-        )
-        selected_research_depth = select_research_depth()
+    selected_research_depth = select_research_depth()
 
-    # Step 6: LLM Provider (skipped when set via TRADINGAGENTS_LLM_PROVIDER).
-    # The backend URL comes from TRADINGAGENTS_LLM_BACKEND_URL when set,
-    # otherwise the provider's default endpoint — the same value the menu
-    # would have picked.
-    provider_from_env = bool(os.environ.get("TRADINGAGENTS_LLM_PROVIDER"))
-    if provider_from_env:
-        selected_llm_provider = DEFAULT_CONFIG["llm_provider"].lower()
-        backend_url = resolve_backend_url(
-            selected_llm_provider, env_url=DEFAULT_CONFIG["backend_url"]
-        )
-        console.print(f"[green]✓ LLM provider from environment:[/green] {selected_llm_provider}")
-        console.print(f"[green]✓ Backend URL:[/green] {backend_url}")
-        # Still confirm/persist the API key so the run doesn't fail later.
-        ensure_api_key(selected_llm_provider)
-    else:
+    selected_llm_provider = resolved_llm.provider if resolved_llm else None
+    backend_url = resolved_llm.backend_url if resolved_llm else None
+
+    # Step 6: LLM Provider
+    if not selected_llm_provider:
         console.print(
             create_question_box(
                 "Step 6: LLM Provider", "Select your LLM provider"
             )
         )
-        selected_llm_provider, backend_url = select_llm_provider()
+        selected_llm_provider, selected_backend_url = select_llm_provider()
+        if backend_url is None:
+            backend_url = selected_backend_url
 
-        # Providers with regional endpoints prompt for the region as a secondary
-        # step so the main dropdown stays clean (mainland China and international
-        # accounts cannot share API keys).
-        if selected_llm_provider == "qwen":
-            selected_llm_provider, backend_url = ask_qwen_region()
-        elif selected_llm_provider == "minimax":
-            selected_llm_provider, backend_url = ask_minimax_region()
-        elif selected_llm_provider == "glm":
-            selected_llm_provider, backend_url = ask_glm_region()
-
-        # Honor an explicit env backend URL even when the provider was chosen
-        # interactively, so it isn't overwritten by the menu default (#978).
-        backend_url = resolve_backend_url(
-            selected_llm_provider, backend_url, env_url=DEFAULT_CONFIG["backend_url"]
-        )
-
-        # The generic OpenAI-compatible endpoint has no default; ask for it if
-        # neither the menu nor the environment supplied one.
-        if selected_llm_provider == "openai_compatible" and not backend_url:
-            backend_url = prompt_openai_compatible_url()
-
-        # For Ollama, surface the resolved endpoint (OLLAMA_BASE_URL vs default)
-        # before model selection so it's obvious where we're connecting.
-        if selected_llm_provider == "ollama":
-            confirm_ollama_endpoint(backend_url)
-
-        # Confirm the provider's API key is present; prompt the user to paste
-        # one and persist it to .env if it's missing, so the analysis run
-        # doesn't fail later at the first API call.
-        ensure_api_key(selected_llm_provider)
-
-    # Step 7: Thinking agents (skipped when either model is set via environment)
-    if os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM") or os.environ.get("TRADINGAGENTS_DEEP_THINK_LLM"):
-        selected_shallow_thinker = DEFAULT_CONFIG["quick_think_llm"]
-        selected_deep_thinker = DEFAULT_CONFIG["deep_think_llm"]
-        console.print(
-            f"[green]✓ Thinking agents from environment:[/green] "
-            f"quick={selected_shallow_thinker}, deep={selected_deep_thinker}"
-        )
-    else:
+    # Step 7: Thinking agents
+    selected_shallow_thinker = resolved_llm.quick_model if resolved_llm else None
+    selected_deep_thinker = resolved_llm.deep_model if resolved_llm else None
+    if not selected_shallow_thinker or not selected_deep_thinker:
         console.print(
             create_question_box(
                 "Step 7: Thinking Agents", "Select your thinking agents for analysis"
             )
         )
+    if not selected_shallow_thinker:
         selected_shallow_thinker = select_shallow_thinking_agent(selected_llm_provider)
+    if not selected_deep_thinker:
         selected_deep_thinker = select_deep_thinking_agent(selected_llm_provider)
 
-    # Step 8: Provider-specific reasoning/thinking configuration. Each knob is
-    # settable via its TRADINGAGENTS_* env var; when that var is set (or the
-    # provider itself came from env) the prompt is skipped and the configured
-    # value is used — same env-precedence rule as the steps above. None = each
-    # provider's own default.
-    thinking_level = None
-    reasoning_effort = None
-    anthropic_effort = None
+    # Step 8: Provider-specific thinking configuration
+    thinking_level = resolved_llm.google_thinking_level if resolved_llm else None
+    reasoning_effort = resolved_llm.openai_reasoning_effort if resolved_llm else None
+    anthropic_effort = resolved_llm.anthropic_effort if resolved_llm else None
 
     provider_lower = selected_llm_provider.lower()
-    if provider_from_env:
-        thinking_level = DEFAULT_CONFIG["google_thinking_level"]
-        reasoning_effort = DEFAULT_CONFIG["openai_reasoning_effort"]
-        anthropic_effort = DEFAULT_CONFIG["anthropic_effort"]
-    elif provider_lower == "google":
-        thinking_level = thinking_value_or_prompt(
-            "TRADINGAGENTS_GOOGLE_THINKING_LEVEL", "google_thinking_level",
-            "Gemini thinking mode", "Step 8: Thinking Mode",
-            "Configure Gemini thinking mode", ask_gemini_thinking_config,
+    if provider_lower == "google" and not thinking_level:
+        console.print(
+            create_question_box(
+                "Step 8: Thinking Mode",
+                "Configure Gemini thinking mode"
+            )
         )
-    elif provider_lower == "openai":
-        reasoning_effort = thinking_value_or_prompt(
-            "TRADINGAGENTS_OPENAI_REASONING_EFFORT", "openai_reasoning_effort",
-            "Reasoning effort", "Step 8: Reasoning Effort",
-            "Configure OpenAI reasoning effort level", ask_openai_reasoning_effort,
+        thinking_level = ask_gemini_thinking_config()
+    elif provider_lower == "openai" and not reasoning_effort:
+        console.print(
+            create_question_box(
+                "Step 8: Reasoning Effort",
+                "Configure OpenAI reasoning effort level"
+            )
         )
-    elif provider_lower == "anthropic":
-        anthropic_effort = thinking_value_or_prompt(
-            "TRADINGAGENTS_ANTHROPIC_EFFORT", "anthropic_effort",
-            "Claude effort", "Step 8: Effort Level",
-            "Configure Claude effort level", ask_anthropic_effort,
+        reasoning_effort = ask_openai_reasoning_effort()
+    elif provider_lower == "anthropic" and not anthropic_effort:
+        console.print(
+            create_question_box(
+                "Step 8: Effort Level",
+                "Configure Claude effort level"
+            )
         )
 
     return {
@@ -993,7 +935,8 @@ def run_analysis(
     llm_overrides: LLMConfigOverrides | None = None,
 ):
     # First get all user selections
-    selections = get_user_selections()
+    resolved_llm = resolve_llm_config(llm_overrides)
+    selections = get_user_selections(resolved_llm)
 
     Round counts and checkpoint follow "explicit env/flag wins": an env-applied
     value on DEFAULT_CONFIG is preserved unless the user overrode it on the CLI.
