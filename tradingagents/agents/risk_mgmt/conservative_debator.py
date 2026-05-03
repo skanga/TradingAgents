@@ -13,6 +13,8 @@ def create_conservative_debator(llm):
         sentiment_report = state["sentiment_report"]
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
+        macro_snapshot = state.get("macro_snapshot", "") or "Macro snapshot unavailable for this run."
+        iv_snapshot = state.get("iv_snapshot", "") or "IV-rank snapshot unavailable for this run."
 
         trader_decision = state["trader_investment_plan"]
 
@@ -26,6 +28,15 @@ Market Research Report: {market_research_report}
 Social Media Sentiment Report: {sentiment_report}
 Latest World Affairs Report: {news_report}
 Company Fundamentals Report: {fundamentals_report}
+
+Macro Backdrop (FRED snapshot, refreshed at run start):
+{macro_snapshot}
+
+Implied Volatility Context (IV Rank vs trailing realised vol):
+{iv_snapshot}
+
+Treat an UNFAVORABLE macro print (curve inversion, widening high-yield credit spreads, sharp dollar strength, rising long yields) as systemic risk that the trader's bottom-up case may be ignoring — these regimes historically precede equity drawdowns and your job is to make the systemic argument loudly. When IV Rank is HIGH (≥ 50), point out that the options market is already pricing meaningful uncertainty: position sizing should be smaller, and any new exposure should consider defined-risk structures rather than naked long. When IV Rank is LOW, do not be lulled — low IV ahead of identifiable catalysts (earnings, FOMC, sector rotations) is precisely when complacency is most expensive.
+
 Here is the current conversation history: {history} Here is the last response from the aggressive analyst: {current_aggressive_response} Here is the last response from the neutral analyst: {current_neutral_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
 
 Engage by questioning their optimism and emphasizing the potential downsides they may have overlooked. Address each of their counterpoints to showcase why a conservative stance is ultimately the safest path for the firm's assets. Focus on debating and critiquing their arguments to demonstrate the strength of a low-risk strategy over their approaches. Output conversationally as if you are speaking without any special formatting."""

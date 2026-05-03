@@ -13,6 +13,8 @@ def create_aggressive_debator(llm):
         sentiment_report = state["sentiment_report"]
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
+        macro_snapshot = state.get("macro_snapshot", "") or "Macro snapshot unavailable for this run."
+        iv_snapshot = state.get("iv_snapshot", "") or "IV-rank snapshot unavailable for this run."
 
         trader_decision = state["trader_investment_plan"]
 
@@ -26,6 +28,15 @@ Market Research Report: {market_research_report}
 Social Media Sentiment Report: {sentiment_report}
 Latest World Affairs Report: {news_report}
 Company Fundamentals Report: {fundamentals_report}
+
+Macro Backdrop (FRED snapshot, refreshed at run start):
+{macro_snapshot}
+
+Implied Volatility Context (IV Rank vs trailing realised vol):
+{iv_snapshot}
+
+When the macro backdrop is FAVORABLE (positive curve, tightening credit, softening dollar), lean into it as the systemic tailwind that justifies aggressive sizing. When IV Rank is LOW (< 20), argue that the market is complacent and the asymmetry favors initiating exposure before vol expands. When IV Rank is HIGH, point out that elevated IV means the move is already partially priced — and that fading the consensus fear can pay disproportionately. Do NOT let the conservatives weaponise an UNFAVORABLE macro print without you reframing it as either (a) priced-in, (b) idiosyncratic to the company's situation, or (c) opportunity for early positioning ahead of the cycle turn.
+
 Here is the current conversation history: {history} Here are the last arguments from the conservative analyst: {current_conservative_response} Here are the last arguments from the neutral analyst: {current_neutral_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
 
 Engage actively by addressing any specific concerns raised, refuting the weaknesses in their logic, and asserting the benefits of risk-taking to outpace market norms. Maintain a focus on debating and persuading, not just presenting data. Challenge each counterpoint to underscore why a high-risk approach is optimal. Output conversationally as if you are speaking without any special formatting."""

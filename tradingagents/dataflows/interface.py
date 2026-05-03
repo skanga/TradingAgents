@@ -24,6 +24,22 @@ from .alpha_vantage import (
 )
 from .alpha_vantage_common import AlphaVantageRateLimitError
 
+# Enhanced data adapters (scaffolded; see each module for implementation status)
+from .sec_insider import get_insider_transactions as get_sec_insider_transactions
+from .congress_trades import get_congress_trades as get_finnhub_congress_trades
+from .options_flow import (
+    get_options_summary as get_yfinance_options_summary,
+    get_iv_rank as get_yfinance_iv_rank,
+)
+from .macro_data import get_macro_environment as get_fred_macro_environment
+from .earnings_transcript import (
+    get_earnings_transcript_sentiment as get_motley_fool_earnings_transcript_sentiment,
+)
+from .sector_analysis import (
+    get_sector_relative_strength as get_yfinance_sector_relative_strength,
+    get_intermarket_correlations as get_yfinance_intermarket_correlations,
+)
+
 # Configuration and routing logic
 from .config import get_config
 
@@ -57,12 +73,48 @@ TOOLS_CATEGORIES = {
             "get_global_news",
             "get_insider_transactions",
         ]
-    }
+    },
+    "political_data": {
+        "description": "Congressional STOCK Act disclosures",
+        "tools": [
+            "get_congress_trades",
+        ]
+    },
+    "options_data": {
+        "description": "Options-flow positioning signals",
+        "tools": [
+            "get_options_summary",
+            "get_iv_rank",
+        ]
+    },
+    "macro_data": {
+        "description": "Macro yields, spreads, and dollar trend",
+        "tools": [
+            "get_macro_environment",
+        ]
+    },
+    "transcript_data": {
+        "description": "Earnings call transcript sentiment",
+        "tools": [
+            "get_earnings_transcript_sentiment",
+        ]
+    },
+    "sector_data": {
+        "description": "Sector relative strength and inter-market correlations",
+        "tools": [
+            "get_sector_relative_strength",
+            "get_intermarket_correlations",
+        ]
+    },
 }
 
 VENDOR_LIST = [
     "yfinance",
     "alpha_vantage",
+    "sec",
+    "finnhub",
+    "fred",
+    "motley_fool",
 ]
 
 # Mapping of methods to their vendor-specific implementations
@@ -106,6 +158,35 @@ VENDOR_METHODS = {
     "get_insider_transactions": {
         "alpha_vantage": get_alpha_vantage_insider_transactions,
         "yfinance": get_yfinance_insider_transactions,
+        "sec": get_sec_insider_transactions,
+    },
+    # political_data
+    "get_congress_trades": {
+        # Internally tries Finnhub first (uses FINNHUB_API_KEY) then falls
+        # back to Senate Stock Watcher (no key, Senate-only).
+        "finnhub": get_finnhub_congress_trades,
+    },
+    # options_data
+    "get_options_summary": {
+        "yfinance": get_yfinance_options_summary,
+    },
+    "get_iv_rank": {
+        "yfinance": get_yfinance_iv_rank,
+    },
+    # macro_data
+    "get_macro_environment": {
+        "fred": get_fred_macro_environment,
+    },
+    # transcript_data
+    "get_earnings_transcript_sentiment": {
+        "motley_fool": get_motley_fool_earnings_transcript_sentiment,
+    },
+    # sector_data
+    "get_sector_relative_strength": {
+        "yfinance": get_yfinance_sector_relative_strength,
+    },
+    "get_intermarket_correlations": {
+        "yfinance": get_yfinance_intermarket_correlations,
     },
 }
 

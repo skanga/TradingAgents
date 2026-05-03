@@ -15,16 +15,27 @@ class GraphSetup:
 
     def __init__(
         self,
-        quick_thinking_llm: Any,
-        deep_thinking_llm: Any,
+        role_llms: Dict[str, Any],
         tool_nodes: Dict[str, ToolNode],
         conditional_logic: ConditionalLogic,
     ):
-        """Initialize with required components."""
-        self.quick_thinking_llm = quick_thinking_llm
-        self.deep_thinking_llm = deep_thinking_llm
+        """Initialize with the role-keyed LLM map and graph dependencies.
+
+        ``role_llms`` must contain at minimum ``deep`` and ``quick``; the
+        ``structured_output`` / ``quant`` / ``light`` keys fall back to
+        ``deep`` / ``quick`` / ``quick`` respectively when absent.
+        """
+        self.role_llms = role_llms
         self.tool_nodes = tool_nodes
         self.conditional_logic = conditional_logic
+        # Convenience aliases for the common pair (used by analyst defaults
+        # that don't fit any specialised role).
+        self.quick_thinking_llm = role_llms["quick"]
+        self.deep_thinking_llm = role_llms["deep"]
+
+    def _llm(self, role: str, fallback_role: str = "quick") -> Any:
+        """Resolve a role to its LLM, falling back if not configured."""
+        return self.role_llms.get(role) or self.role_llms[fallback_role]
 
     def setup_graph(
         self, selected_analysts=["market", "social", "news", "fundamentals"]
@@ -46,45 +57,52 @@ class GraphSetup:
         delete_nodes = {}
         tool_nodes = {}
 
+        # Per-role LLM routing (see TradingAgentsGraph._build_role_llms):
+        #   quant  → market, options, risk debaters
+        #   light  → social, news (surface-level reading)
+        #   quick  → fundamentals, bull/bear, trader (mid-tier reasoning)
+        #   structured_output → research mgr, portfolio mgr (structured output)
+        quant_llm = self._llm("quant")
+        light_llm = self._llm("light")
+        quick_llm = self._llm("quick")
+        structured_llm = self._llm("structured_output", fallback_role="deep")
+
         if "market" in selected_analysts:
-            analyst_nodes["market"] = create_market_analyst(
-                self.quick_thinking_llm
-            )
+            analyst_nodes["market"] = create_market_analyst(quant_llm)
             delete_nodes["market"] = create_msg_delete()
             tool_nodes["market"] = self.tool_nodes["market"]
 
         if "social" in selected_analysts:
-            analyst_nodes["social"] = create_social_media_analyst(
-                self.quick_thinking_llm
-            )
+            analyst_nodes["social"] = create_social_media_analyst(light_llm)
             delete_nodes["social"] = create_msg_delete()
             tool_nodes["social"] = self.tool_nodes["social"]
 
         if "news" in selected_analysts:
-            analyst_nodes["news"] = create_news_analyst(
-                self.quick_thinking_llm
-            )
+            analyst_nodes["news"] = create_news_analyst(light_llm)
             delete_nodes["news"] = create_msg_delete()
             tool_nodes["news"] = self.tool_nodes["news"]
 
         if "fundamentals" in selected_analysts:
-            analyst_nodes["fundamentals"] = create_fundamentals_analyst(
-                self.quick_thinking_llm
-            )
+            analyst_nodes["fundamentals"] = create_fundamentals_analyst(quick_llm)
             delete_nodes["fundamentals"] = create_msg_delete()
             tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
 
+        if "options" in selected_analysts:
+            analyst_nodes["options"] = create_options_analyst(quant_llm)
+            delete_nodes["options"] = create_msg_delete()
+            tool_nodes["options"] = self.tool_nodes["options"]
+
         # Create researcher and manager nodes
-        bull_researcher_node = create_bull_researcher(self.quick_thinking_llm)
-        bear_researcher_node = create_bear_researcher(self.quick_thinking_llm)
-        research_manager_node = create_research_manager(self.deep_thinking_llm)
-        trader_node = create_trader(self.quick_thinking_llm)
+        bull_researcher_node = create_bull_researcher(quick_llm)
+        bear_researcher_node = create_bear_researcher(quick_llm)
+        research_manager_node = create_research_manager(structured_llm)
+        trader_node = create_trader(quick_llm)
 
         # Create risk analysis nodes
-        aggressive_analyst = create_aggressive_debator(self.quick_thinking_llm)
-        neutral_analyst = create_neutral_debator(self.quick_thinking_llm)
-        conservative_analyst = create_conservative_debator(self.quick_thinking_llm)
-        portfolio_manager_node = create_portfolio_manager(self.deep_thinking_llm)
+        aggressive_analyst = create_aggressive_debator(quant_llm)
+        neutral_analyst = create_neutral_debator(quant_llm)
+        conservative_analyst = create_conservative_debator(quant_llm)
+        portfolio_manager_node = create_portfolio_manager(structured_llm)
 
         # Create workflow
         workflow = StateGraph(AgentState)

@@ -109,6 +109,14 @@ _PASSTHROUGH_KWARGS = (
     "api_key", "callbacks", "http_client", "http_async_client",
 )
 
+# Default attempt budget for transient errors (429, 5xx, network timeouts).
+# The openai SDK retries automatically with exponential backoff + jitter;
+# 6 attempts buys roughly 30-60s of total wait on the worst case, which is
+# enough to ride out OpenRouter free-tier upstream throttling without
+# wedging a long agent run on a transient provider hiccup. Users can
+# override via ``config["max_retries"]``.
+_DEFAULT_MAX_RETRIES = 6
+
 # Provider base URLs and API key env vars
 _PROVIDER_CONFIG = {
     "xai": ("https://api.x.ai/v1", "XAI_API_KEY"),
@@ -163,6 +171,11 @@ class OpenAIClient(BaseLLMClient):
         for key in _PASSTHROUGH_KWARGS:
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
+
+        # Apply the framework-wide retry default unless the user opted out
+        # by setting ``max_retries`` explicitly in config. The openai SDK
+        # retries 429s and transient 5xx with exponential-backoff jitter.
+        llm_kwargs.setdefault("max_retries", _DEFAULT_MAX_RETRIES)
 
         # Native OpenAI: use Responses API for consistent behavior across
         # all model families. Third-party providers use Chat Completions.

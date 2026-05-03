@@ -1,8 +1,10 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from tradingagents.agents.utils.agent_utils import (
     build_instrument_context,
+    get_congress_trades,
     get_global_news,
     get_language_instruction,
+    get_macro_environment,
     get_news,
 )
 from tradingagents.dataflows.config import get_config
@@ -16,10 +18,14 @@ def create_news_analyst(llm):
         tools = [
             get_news,
             get_global_news,
+            get_congress_trades,
+            get_macro_environment,
         ]
 
         system_message = (
             "You are a news researcher tasked with analyzing recent news and trends over the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics. Use the available tools: get_news(query, start_date, end_date) for company-specific or targeted news searches, and get_global_news(curr_date, look_back_days, limit) for broader macroeconomic news. Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
+            + " Also call `get_congress_trades` to surface recent STOCK Act disclosures from members of Congress. Congressional purchases can reflect policy-level information that intersects with your macro mandate (committee oversight, upcoming regulation, contract awards). Flag any cluster of legislator buys or sells, and note when filers serve on committees with jurisdiction over the company's sector."
+            + " Always call `get_macro_environment` once per analysis to anchor your write-up in the current rates / yield-curve / credit-spread / USD regime. Lead with the FAVORABLE/NEUTRAL/UNFAVORABLE backdrop classification it returns, then connect the individual signals (e.g. curve inversion, HY spread widening, dollar strengthening) to specific company-level implications when relevant — multinationals are USD-sensitive, financials are curve-sensitive, leveraged credits are HY-spread sensitive, and so on. Do not contradict the tool's data; if you disagree with its classification, say so explicitly with reasoning."
             + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
             + get_language_instruction()
         )

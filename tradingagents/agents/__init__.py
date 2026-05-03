@@ -4,6 +4,7 @@ from .utils.agent_states import AgentState, InvestDebateState, RiskDebateState
 from .analysts.fundamentals_analyst import create_fundamentals_analyst
 from .analysts.market_analyst import create_market_analyst
 from .analysts.news_analyst import create_news_analyst
+from .analysts.options_analyst import create_options_analyst
 from .analysts.social_media_analyst import create_social_media_analyst
 
 from .researchers.bear_researcher import create_bear_researcher
@@ -30,6 +31,7 @@ __all__ = [
     "create_market_analyst",
     "create_neutral_debator",
     "create_news_analyst",
+    "create_options_analyst",
     "create_aggressive_debator",
     "create_portfolio_manager",
     "create_conservative_debator",

@@ -18,6 +18,23 @@ from tradingagents.agents.utils.news_data_tools import (
     get_insider_transactions,
     get_global_news
 )
+from tradingagents.agents.utils.political_tools import (
+    get_congress_trades,
+)
+from tradingagents.agents.utils.options_tools import (
+    get_options_summary,
+    get_iv_rank,
+)
+from tradingagents.agents.utils.macro_tools import (
+    get_macro_environment,
+)
+from tradingagents.agents.utils.sector_tools import (
+    get_sector_relative_strength,
+    get_intermarket_correlations,
+)
+from tradingagents.agents.utils.transcript_tools import (
+    get_earnings_transcript_sentiment,
+)
 
 
 def get_language_instruction() -> str:

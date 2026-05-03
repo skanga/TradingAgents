@@ -56,6 +56,7 @@ class AgentState(MessagesState):
         str, "Report from the News Researcher of current world affairs"
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
+    options_report: Annotated[str, "Report from the Options Analyst on institutional positioning"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[
@@ -71,3 +72,5 @@ class AgentState(MessagesState):
     ]
     final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]
+    macro_snapshot: Annotated[str, "Macro backdrop snapshot pre-fetched once at run start (FRED yields, curve, credit, USD)"]
+    iv_snapshot: Annotated[str, "Implied volatility rank snapshot pre-fetched once at run start (yfinance options)"]

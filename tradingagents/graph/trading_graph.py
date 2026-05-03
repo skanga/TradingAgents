@@ -36,7 +36,14 @@ from tradingagents.agents.utils.agent_utils import (
     get_income_statement,
     get_news,
     get_insider_transactions,
-    get_global_news
+    get_global_news,
+    get_congress_trades,
+    get_options_summary,
+    get_iv_rank,
+    get_macro_environment,
+    get_sector_relative_strength,
+    get_intermarket_correlations,
+    get_earnings_transcript_sentiment,
 )
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
@@ -72,6 +79,15 @@ class TradingAgentsGraph:
         # Update the interface's config
         set_config(self.config)
 
+        # Auto-include the options analyst when its feature flag is enabled.
+        # Callers passing an explicit selected_analysts list can still opt out
+        # by leaving the flag False; opting in is centralised on the flag.
+        if (
+            self.config.get("enable_options_analyst")
+            and "options" not in selected_analysts
+        ):
+            selected_analysts = list(selected_analysts) + ["options"]
+
         # Create necessary directories
         os.makedirs(self.config["data_cache_dir"], exist_ok=True)
         os.makedirs(self.config["results_dir"], exist_ok=True)
@@ -98,7 +114,12 @@ class TradingAgentsGraph:
 
         self.deep_thinking_llm = deep_client.get_llm()
         self.quick_thinking_llm = quick_client.get_llm()
-        
+
+        # Build the role-keyed LLM map. Empty role-specific config values
+        # fall back to the deep/quick pair so this is safe regardless of
+        # how much per-role customisation the user has configured.
+        self.role_llms = self._build_role_llms(llm_kwargs)
+
         self.memory_log = TradingMemoryLog(self.config)
 
         # Create tool nodes
@@ -110,10 +131,9 @@ class TradingAgentsGraph:
             max_risk_discuss_rounds=self.config["max_risk_discuss_rounds"],
         )
         self.graph_setup = GraphSetup(
-            self.quick_thinking_llm,
-            self.deep_thinking_llm,
-            self.tool_nodes,
-            self.conditional_logic,
+            role_llms=self.role_llms,
+            tool_nodes=self.tool_nodes,
+            conditional_logic=self.conditional_logic,
         )
 
         self.propagator = Propagator()
@@ -161,6 +181,9 @@ class TradingAgentsGraph:
                     get_stock_data,
                     # Technical indicators
                     get_indicators,
+                    # Sector/inter-market context
+                    get_sector_relative_strength,
+                    get_intermarket_correlations,
                 ]
             ),
             "social": ToolNode(
@@ -175,6 +198,9 @@ class TradingAgentsGraph:
                     get_news,
                     get_global_news,
                     get_insider_transactions,
+                    # Macro and policy-adjacent signals
+                    get_macro_environment,
+                    get_congress_trades,
                 ]
             ),
             "fundamentals": ToolNode(
@@ -184,9 +210,100 @@ class TradingAgentsGraph:
                     get_balance_sheet,
                     get_cashflow,
                     get_income_statement,
+                    # Insider, congressional, and earnings-call complements
+                    get_insider_transactions,
+                    get_congress_trades,
+                    get_earnings_transcript_sentiment,
+                ]
+            ),
+            "options": ToolNode(
+                [
+                    get_options_summary,
+                    get_iv_rank,
                 ]
             ),
         }
+
+    def _build_role_llms(self, llm_kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Construct a role-keyed LLM map.
+
+        Roles:
+          - ``deep`` / ``quick`` — the existing two-tier pair, always present.
+          - ``structured_output`` — for the Research Manager and Portfolio
+            Manager (they emit provider-native structured output).
+          - ``quant`` — for the Market analyst, Options analyst, and the
+            three risk debaters (technical / quantitative reasoning).
+          - ``light`` — for the Social and News analysts (surface-level
+            reading, no heavy reasoning).
+
+        Empty role-specific config strings fall back to ``deep`` (for
+        ``structured_output``) or ``quick`` (for ``quant`` and ``light``).
+        Identical model strings across roles share a client to avoid
+        duplicate provider connections.
+        """
+        deep_model = self.config.get("deep_think_llm")
+        quick_model = self.config.get("quick_think_llm")
+        provider = self.config.get("llm_provider")
+        base_url = self.config.get("backend_url")
+
+        # Memo by model string; primes with the already-built deep/quick LLMs
+        # so a role pointing at the same model reuses the same client.
+        cache: Dict[str, Any] = {
+            deep_model: self.deep_thinking_llm,
+            quick_model: self.quick_thinking_llm,
+        }
+
+        def get_or_build(model: Any, fallback: Any) -> Any:
+            model_str = (model or "").strip() if isinstance(model, str) else ""
+            if not model_str:
+                return fallback
+            if model_str in cache:
+                return cache[model_str]
+            client = create_llm_client(
+                provider=provider,
+                model=model_str,
+                base_url=base_url,
+                **llm_kwargs,
+            )
+            llm = client.get_llm()
+            cache[model_str] = llm
+            return llm
+
+        return {
+            "deep": self.deep_thinking_llm,
+            "quick": self.quick_thinking_llm,
+            "structured_output": get_or_build(
+                self.config.get("structured_output_llm"), fallback=self.deep_thinking_llm,
+            ),
+            "quant": get_or_build(
+                self.config.get("quant_llm"), fallback=self.quick_thinking_llm,
+            ),
+            "light": get_or_build(
+                self.config.get("light_llm"), fallback=self.quick_thinking_llm,
+            ),
+        }
+
+    def _safe_macro_snapshot(self) -> str:
+        """Best-effort pre-fetch of the macro backdrop for the risk debate.
+
+        Returns the empty string if the call raises so the debaters can
+        condition on ``state['macro_snapshot']`` being truthy.
+        """
+        try:
+            from tradingagents.dataflows.interface import route_to_vendor
+            return route_to_vendor("get_macro_environment") or ""
+        except Exception as e:
+            logger.warning("macro snapshot pre-fetch failed: %s", e)
+            return ""
+
+    def _safe_iv_snapshot(self, ticker: str) -> str:
+        """Best-effort pre-fetch of the IV-rank snapshot for the risk debate."""
+        try:
+            from tradingagents.dataflows.interface import route_to_vendor
+            return route_to_vendor("get_iv_rank", ticker) or ""
+        except Exception as e:
+            logger.warning("IV snapshot pre-fetch failed: %s", e)
+            return ""
 
     def _fetch_returns(
         self, ticker: str, trade_date: str, holding_days: int = 5
@@ -304,8 +421,20 @@ class TradingAgentsGraph:
         """Execute the graph and write the resulting state to disk and memory log."""
         # Initialize state — inject memory log context for PM.
         past_context = self.memory_log.get_past_context(company_name)
+
+        # Section 8: pre-fetch macro + IV snapshots once so the prompt-only
+        # risk debaters can reference them without needing tool-calling
+        # plumbing of their own. Both helpers return graceful fallback
+        # strings on failure, so the run is never blocked by network errors.
+        macro_snapshot = self._safe_macro_snapshot()
+        iv_snapshot = self._safe_iv_snapshot(company_name)
+
         init_agent_state = self.propagator.create_initial_state(
-            company_name, trade_date, past_context=past_context
+            company_name,
+            trade_date,
+            past_context=past_context,
+            macro_snapshot=macro_snapshot,
+            iv_snapshot=iv_snapshot,
         )
         args = self.propagator.get_graph_args()
 

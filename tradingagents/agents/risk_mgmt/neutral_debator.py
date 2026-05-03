@@ -13,6 +13,8 @@ def create_neutral_debator(llm):
         sentiment_report = state["sentiment_report"]
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
+        macro_snapshot = state.get("macro_snapshot", "") or "Macro snapshot unavailable for this run."
+        iv_snapshot = state.get("iv_snapshot", "") or "IV-rank snapshot unavailable for this run."
 
         trader_decision = state["trader_investment_plan"]
 
@@ -26,6 +28,15 @@ Market Research Report: {market_research_report}
 Social Media Sentiment Report: {sentiment_report}
 Latest World Affairs Report: {news_report}
 Company Fundamentals Report: {fundamentals_report}
+
+Macro Backdrop (FRED snapshot, refreshed at run start):
+{macro_snapshot}
+
+Implied Volatility Context (IV Rank vs trailing realised vol):
+{iv_snapshot}
+
+Use the macro and volatility context as a tie-breaker between the aggressive and conservative cases. When the macro print is NEUTRAL or mixed, neither side has a clean systemic argument — push the debate back onto company-specific factors. When macro is FAVORABLE but IV is HIGH (or vice versa), explicitly call out the contradiction: those are precisely the regimes that warrant moderated, partial-position approaches rather than committing to either extreme. Cite specific data points from the snapshots when you do so; avoid hand-waving about "the macro environment".
+
 Here is the current conversation history: {history} Here is the last response from the aggressive analyst: {current_aggressive_response} Here is the last response from the conservative analyst: {current_conservative_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
 
 Engage actively by analyzing both sides critically, addressing weaknesses in the aggressive and conservative arguments to advocate for a more balanced approach. Challenge each of their points to illustrate why a moderate risk strategy might offer the best of both worlds, providing growth potential while safeguarding against extreme volatility. Focus on debating rather than simply presenting data, aiming to show that a balanced view can lead to the most reliable outcomes. Output conversationally as if you are speaking without any special formatting."""

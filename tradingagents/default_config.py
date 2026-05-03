@@ -11,40 +11,84 @@ DEFAULT_CONFIG = {
     # the oldest resolved entries are pruned once this limit is exceeded.
     # Pending entries are never pruned. None disables rotation entirely.
     "memory_log_max_entries": None,
-    # LLM settings
-    "llm_provider": "openai",
-    "deep_think_llm": "gpt-5.4",
-    "quick_think_llm": "gpt-5.4-mini",
-    # When None, each provider's client falls back to its own default endpoint
-    # (api.openai.com for OpenAI, generativelanguage.googleapis.com for Gemini, ...).
-    # The CLI overrides this per provider when the user picks one. Keeping a
-    # provider-specific URL here would leak (e.g. OpenAI's /v1 was previously
-    # being forwarded to Gemini, producing malformed request URLs).
-    "backend_url": None,
+
+    # --- LLM settings ---
+    "llm_provider":   "openrouter",
+    "deep_think_llm": "nvidia/nemotron-3-super-120b-a12b:free",
+    "quick_think_llm": "openai/gpt-oss-20b:free",
+    # Provider-specific endpoint. None lets each provider's client pick its
+    # own default; setting it here pins the OpenAI-compatible base URL used
+    # by the OpenAI/xAI/DeepSeek/Qwen/GLM/Ollama/OpenRouter clients.
+    "backend_url": "https://openrouter.ai/api/v1",
+
+    # Per-role LLM overrides (config keys reserved; not yet consumed).
+    # Empty string falls back to deep_think_llm or quick_think_llm. The agent
+    # factories need to be threaded with a role-keyed LLM map before these
+    # take effect — see TODO(per-role LLMs) in graph/trading_graph.py.
+    "structured_output_llm": "openai/gpt-oss-120b:free",   # Research Mgr, Portfolio Mgr
+    "quant_llm":             "qwen/qwen3-next-80b-a3b-instruct:free",  # Market, Options, Risk
+    "light_llm":             "meta-llama/llama-3.3-70b-instruct:free", # Social, Sector, Form4
+
     # Provider-specific thinking configuration
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
     "anthropic_effort": None,           # "high", "medium", "low"
+
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
     "checkpoint_enabled": False,
-    # Output language for analyst reports and final decision
-    # Internal agent debate stays in English for reasoning quality
+
+    # Output language for analyst reports and final decision.
+    # Internal agent debate stays in English for reasoning quality.
     "output_language": "English",
+
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
     "max_recur_limit": 100,
-    # Data vendor configuration
-    # Category-level configuration (default for all tools in category)
+
+    # --- Data vendor configuration ---
+    # Category-level configuration (default vendor for all tools in category)
     "data_vendors": {
-        "core_stock_apis": "yfinance",       # Options: alpha_vantage, yfinance
-        "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
-        "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance
-        "news_data": "yfinance",             # Options: alpha_vantage, yfinance
+        "core_stock_apis":    "yfinance",     # Options: alpha_vantage, yfinance
+        "technical_indicators": "yfinance",   # Options: alpha_vantage, yfinance
+        "fundamental_data":   "yfinance",     # Options: alpha_vantage, yfinance
+        "news_data":          "yfinance",     # Options: alpha_vantage, yfinance, sec
+        "political_data":     "finnhub",      # Options: finnhub (primary, House+Senate via FINNHUB_API_KEY); falls back to Senate Stock Watcher
+        "options_data":       "yfinance",     # Options: yfinance
+        "macro_data":         "fred",         # Options: fred
+        "transcript_data":    "motley_fool",  # Options: motley_fool
+        "sector_data":        "yfinance",     # Options: yfinance
     },
-    # Tool-level configuration (takes precedence over category-level)
+    # Tool-level configuration (takes precedence over category-level).
+    # Use this to override the vendor for a single tool without changing
+    # the whole category default.
     "tool_vendors": {
-        # Example: "get_stock_data": "alpha_vantage",  # Override category default
+        # Route insider transactions to SEC EDGAR Form 4 by default; the
+        # news_data category default (yfinance) still applies to news.
+        "get_insider_transactions": "sec",
     },
+
+    # --- Enhanced data sources: API keys / identifiers ---
+    "fred_api_key":    os.environ.get("FRED_API_KEY", ""),
+    "sec_user_agent":  os.environ.get("SEC_USER_AGENT", "TradingAgents contact@example.com"),
+    "finnhub_api_key": os.environ.get("FINNHUB_API_KEY", ""),
+
+    # --- Feature flags for enhanced data sources ---
+    # Each flag gates whether the framework auto-wires the corresponding
+    # capability. The underlying tools are always registered with the LLM;
+    # the flag controls whether the new options analyst joins the analyst
+    # chain. (System-prompt enrichment for the existing analysts is added
+    # during the per-section fill-in phase.)
+    "enable_options_analyst":      True,
+    "enable_congressional_trades": True,
+    "enable_macro_data":           True,
+    "enable_transcript_sentiment": True,
+    "enable_sector_analysis":      True,
+    # Use a local FinBERT model for transcript sentiment scoring.
+    # When False (default), transcript sentiment is scored by the configured
+    # quick_thinking_llm — no transformers/torch dependency required.
+    # Setting True is currently a no-op until the optional FinBERT path is
+    # implemented (would require ~2 GB of `transformers` + `torch`).
+    "transcript_use_local_finbert": False,
 }
