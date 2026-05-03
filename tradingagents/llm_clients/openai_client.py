@@ -327,9 +327,18 @@ class OpenAIClient(BaseLLMClient):
                 continue
             llm_kwargs[key] = self.kwargs[key]
 
-        # The subclass (provider quirks) comes from the registry spec.
+        # Native OpenAI: use Responses API for consistent behavior across
+        # all model families. Third-party providers use Chat Completions.
+        if self.provider == "openai" and not self.base_url:
+            llm_kwargs["use_responses_api"] = True
+
+        # DeepSeek's thinking-mode quirks live in their own subclass so the
+        # base NormalizedChatOpenAI stays free of provider-specific branches.
+        chat_cls = DeepSeekChatOpenAI if self.provider == "deepseek" else NormalizedChatOpenAI
         return chat_cls(**llm_kwargs)
 
     def validate_model(self) -> bool:
         """Validate model for the provider."""
+        if self.provider == "openai" and self.base_url:
+            return True
         return validate_model(self.provider, self.model)
