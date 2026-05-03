@@ -19,6 +19,7 @@ from rich.text import Text
 from rich.table import Table
 
 from cli.announcements import fetch_announcements, display_announcements
+from cli.llm_config import LLMConfigOverrides
 from cli.stats_handler import StatsCallbackHandler
 from cli.utils import (
     ask_anthropic_effort,
@@ -987,8 +988,12 @@ def format_tool_args(args, max_length=80) -> str:
         return result[:max_length - 3] + "..."
     return result
 
-def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
-    """Assemble the run config from interactive selections, honoring env precedence.
+def run_analysis(
+    checkpoint: bool = False,
+    llm_overrides: LLMConfigOverrides | None = None,
+):
+    # First get all user selections
+    selections = get_user_selections()
 
     Round counts and checkpoint follow "explicit env/flag wins": an env-applied
     value on DEFAULT_CONFIG is preserved unless the user overrode it on the CLI.
@@ -1296,24 +1301,58 @@ def analyze(
         "--clear-checkpoints",
         help="Delete all saved checkpoints before running (force fresh start).",
     ),
+    llm_provider: str | None = typer.Option(
+        None,
+        "--llm-provider",
+        help="LLM provider key, e.g. openai.",
+    ),
+    quick_model: str | None = typer.Option(
+        None,
+        "--quick-model",
+        help="Model for quick-thinking agents.",
+    ),
+    deep_model: str | None = typer.Option(
+        None,
+        "--deep-model",
+        help="Model for deep-thinking agents.",
+    ),
+    backend_url: str | None = typer.Option(
+        None,
+        "--backend-url",
+        help="OpenAI-compatible base URL.",
+    ),
+    openai_reasoning_effort: str | None = typer.Option(
+        None,
+        "--openai-reasoning-effort",
+        help="OpenAI reasoning effort.",
+    ),
+    google_thinking_level: str | None = typer.Option(
+        None,
+        "--google-thinking-level",
+        help="Gemini thinking level.",
+    ),
+    anthropic_effort: str | None = typer.Option(
+        None,
+        "--anthropic-effort",
+        help="Anthropic effort level.",
+    ),
 ):
     if clear_checkpoints:
         from tradingagents.graph.checkpointer import clear_all_checkpoints
         n = clear_all_checkpoints(cast(str, DEFAULT_CONFIG["data_cache_dir"]))
         console.print(f"[yellow]Cleared {n} checkpoint(s).[/yellow]")
-    try:
-        run_analysis(checkpoint=checkpoint)
-    except _NO_CONSOLE_ERRORS:
-        # A terminal with no console buffer cannot host the interactive prompts.
-        # Emit one actionable line on stderr instead of a prompt_toolkit
-        # traceback; plain text, since rich may not render here either (#1138).
-        typer.echo(
-            "Error: no Windows console available. The interactive CLI needs a real "
-            "console buffer — run it from Windows Terminal, PowerShell, or cmd.exe "
-            "rather than a piped or embedded terminal.",
-            err=True,
-        )
-        raise typer.Exit(code=1) from None
+    run_analysis(
+        checkpoint=checkpoint,
+        llm_overrides=LLMConfigOverrides(
+            provider=llm_provider,
+            quick_model=quick_model,
+            deep_model=deep_model,
+            backend_url=backend_url,
+            openai_reasoning_effort=openai_reasoning_effort,
+            google_thinking_level=google_thinking_level,
+            anthropic_effort=anthropic_effort,
+        ),
+    )
 
 
 if __name__ == "__main__":
