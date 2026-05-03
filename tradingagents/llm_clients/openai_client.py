@@ -276,9 +276,7 @@ class OpenAIClient(BaseLLMClient):
     def get_llm(self) -> Any:
         """Return a configured ChatOpenAI instance, driven by the provider registry."""
         self.warn_if_unknown_model()
-        llm_kwargs = {"model": self.model}
-        spec = OPENAI_COMPATIBLE_PROVIDERS.get(self.provider)
-        chat_cls = NormalizedChatOpenAI
+        llm_kwargs: dict[str, Any] = {"model": self.model}
 
         if spec is not None:
             chat_cls = spec.chat_class

@@ -1,5 +1,5 @@
 import threading
-from typing import Any
+from typing import Any, Dict, List
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage

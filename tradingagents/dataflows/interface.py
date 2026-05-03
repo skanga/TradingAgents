@@ -1,4 +1,5 @@
-import logging
+from collections.abc import Callable
+from typing import Any
 
 from .alpha_vantage import (
     get_balance_sheet as get_alpha_vantage_balance_sheet,
@@ -11,6 +12,9 @@ from .alpha_vantage import (
     get_news as get_alpha_vantage_news,
     get_stock as get_alpha_vantage_stock,
 )
+from .alpha_vantage_common import AlphaVantageRateLimitError, AlphaVantageTemporaryError
+
+# Configuration and routing logic
 from .config import get_config
 from .errors import (
     NoMarketDataError,
@@ -33,7 +37,7 @@ from .yfinance_news import get_global_news_yfinance, get_news_yfinance
 logger = logging.getLogger(__name__)
 
 # Tools organized by category
-TOOLS_CATEGORIES = {
+TOOLS_CATEGORIES: dict[str, dict[str, str | list[str]]] = {
     "core_stock_apis": {
         "description": "OHLCV stock price data",
         "tools": [
@@ -77,7 +81,7 @@ TOOLS_CATEGORIES = {
     }
 }
 
-VENDOR_LIST = [
+VENDOR_LIST: list[str] = [
     "yfinance",
     "fred",
     "polymarket",
@@ -92,7 +96,9 @@ VENDOR_LIST = [
 OPTIONAL_CATEGORIES = {"macro_data", "prediction_markets"}
 
 # Mapping of methods to their vendor-specific implementations
-VENDOR_METHODS = {
+VendorFunction = Callable[..., Any]
+
+VENDOR_METHODS: dict[str, dict[str, VendorFunction]] = {
     # core_stock_apis
     "get_stock_data": {
         "alpha_vantage": get_alpha_vantage_stock,
@@ -150,7 +156,13 @@ def get_category_for_method(method: str) -> str:
             return category
     raise ValueError(f"Method '{method}' not found in any category")
 
-def get_vendor(category: str, method: str = None) -> str:
+def _require_vendor_string(value: Any, source: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{source} vendor must be a string, got {value!r}")
+    return value
+
+
+def get_vendor(category: str, method: str | None = None) -> str:
     """Get the configured vendor for a data category or specific tool method.
     Tool-level configuration takes precedence over category-level.
     """
@@ -160,10 +172,11 @@ def get_vendor(category: str, method: str = None) -> str:
     if method:
         tool_vendors = config.get("tool_vendors", {})
         if method in tool_vendors:
-            return tool_vendors[method]
+            return _require_vendor_string(tool_vendors[method], f"tool '{method}'")
 
     # Fall back to category-level configuration
-    return config.get("data_vendors", {}).get(category, "default")
+    vendor = config.get("data_vendors", {}).get(category, "default")
+    return _require_vendor_string(vendor, f"category '{category}'")
 
 def route_to_vendor(method: str, *args, **kwargs):
     """Route method calls to appropriate vendor implementation with fallback support."""
@@ -200,63 +213,7 @@ def route_to_vendor(method: str, *args, **kwargs):
 
         try:
             return impl_func(*args, **kwargs)
-        except VendorRateLimitError:
-            logger.warning("Vendor %r rate-limited for %s; trying next vendor.", vendor, method)
-            continue
-        except VendorNotConfiguredError as e:
-            logger.warning("Vendor %r not configured for %s; trying next vendor.", vendor, method)
-            if first_error is None:
-                first_error = e  # Surface it if no other vendor can serve the call.
-            continue
-        except NoMarketDataError as e:
-            last_no_data = e  # No data here; another configured vendor may have it
-            continue
-        except Exception as e:
-            # Don't let one vendor's failure crash the call when another can
-            # serve it, but never swallow silently: a broken primary must be
-            # visible in the logs (#989), not hidden behind a fallback's verdict.
-            logger.warning("Vendor %r failed for %s: %s", vendor, method, e)
-            if first_error is None:
-                first_error = e
-            continue
-
-    # If any vendor reported "no data", the symbol is genuinely unavailable.
-    # Return one explicit, instructive sentinel rather than a vendor-specific
-    # empty string, so the agent reports "unavailable" instead of inventing a
-    # value. This takes precedence over incidental fallback errors.
-    if last_no_data is not None:
-        if first_error is not None:
-            # A vendor also hit a real error; surface it in logs so the no-data
-            # verdict can't hide a broken primary (network/auth/etc.).
-            logger.warning(
-                "Returning NO_DATA for %s, but a vendor errored earlier: %s",
-                method, first_error,
-            )
-        sym = last_no_data.symbol
-        canonical = last_no_data.canonical
-        resolved = "" if canonical == sym else f" (resolved to '{canonical}')"
-        # Surface the typed error's detail (e.g. "latest row is 2025-06-11 ...
-        # stale") so the agent sees the specific reason — invalid symbol, no
-        # coverage, or stale data — not just a generic "unavailable".
-        reason = f" ({last_no_data.detail})" if last_no_data.detail else ""
-        return (
-            f"NO_DATA_AVAILABLE: No usable market data for '{sym}'{resolved} from "
-            f"any configured vendor{reason}. The symbol may be invalid, delisted, "
-            f"not covered, or the vendor returned stale data. Do not estimate or "
-            f"fabricate values — report that data is unavailable for this symbol."
-        )
-
-    # No vendor returned data and none reported clean "no data" — surface the
-    # first real error (e.g. the primary vendor's network failure). Optional
-    # enrichment categories degrade to a sentinel instead, so flavour data can't
-    # abort the run.
-    if first_error is not None:
-        if category in OPTIONAL_CATEGORIES:
-            logger.warning("Optional %s unavailable for %s: %s", category, method, first_error)
-            return (
-                f"DATA_UNAVAILABLE: optional {category} could not be retrieved "
-                f"({first_error}). Proceed without it; do not fabricate values."
-            )
-        raise first_error
+        except (AlphaVantageRateLimitError, AlphaVantageTemporaryError):
+            continue  # Only rate limits and temporary request failures trigger fallback
 
     raise RuntimeError(f"No available vendor for '{method}'")

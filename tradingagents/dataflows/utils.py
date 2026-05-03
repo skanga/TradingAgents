@@ -1,5 +1,6 @@
 import re
-from datetime import date, datetime, timedelta
+import pandas as pd
+from datetime import date, timedelta, datetime
 from typing import Annotated
 
 import pandas as pd
@@ -42,7 +43,9 @@ def safe_ticker_component(value: str, *, max_len: int = 32) -> str:
     return value
 
 
-def save_output(data: pd.DataFrame, tag: str, save_path: SavePathType = None) -> None:
+def save_output(
+    data: pd.DataFrame, tag: str, save_path: SavePathType | None = None
+) -> None:
     if save_path:
         data.to_csv(save_path, encoding="utf-8")
         print(f"{tag} saved to {save_path}")

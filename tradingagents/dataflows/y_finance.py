@@ -3,17 +3,7 @@ from typing import Annotated
 
 import pandas as pd
 import yfinance as yf
-from dateutil.relativedelta import relativedelta
-
-from .stockstats_utils import (
-    StockstatsUtils,
-    _assert_ohlcv_not_stale,
-    filter_financials_by_date,
-    load_ohlcv,
-    yf_retry,
-)
-from .symbol_utils import NoMarketDataError, normalize_symbol
-
+from .stockstats_utils import StockstatsUtils, yf_retry, load_ohlcv, filter_financials_by_date
 
 def get_YFin_data_online(
     symbol: Annotated[str, "ticker symbol of the company"],
@@ -273,8 +263,8 @@ def get_stockstats_indicator(
 
 def get_fundamentals(
     ticker: Annotated[str, "ticker symbol of the company"],
-    curr_date: Annotated[str, "current date (not used for yfinance)"] = None
-):
+    curr_date: Annotated[str | None, "current date (not used for yfinance)"] = None,
+) -> str:
     """Get company fundamentals overview from yfinance."""
     canonical = normalize_symbol(ticker)
     try:
@@ -341,8 +331,8 @@ def get_fundamentals(
 def get_balance_sheet(
     ticker: Annotated[str, "ticker symbol of the company"],
     freq: Annotated[str, "frequency of data: 'annual' or 'quarterly'"] = "quarterly",
-    curr_date: Annotated[str, "current date in YYYY-MM-DD format"] = None
-):
+    curr_date: Annotated[str | None, "current date in YYYY-MM-DD format"] = None,
+) -> str:
     """Get balance sheet data from yfinance."""
     canonical = normalize_symbol(ticker)
     try:
@@ -376,8 +366,8 @@ def get_balance_sheet(
 def get_cashflow(
     ticker: Annotated[str, "ticker symbol of the company"],
     freq: Annotated[str, "frequency of data: 'annual' or 'quarterly'"] = "quarterly",
-    curr_date: Annotated[str, "current date in YYYY-MM-DD format"] = None
-):
+    curr_date: Annotated[str | None, "current date in YYYY-MM-DD format"] = None,
+) -> str:
     """Get cash flow data from yfinance."""
     canonical = normalize_symbol(ticker)
     try:
@@ -411,8 +401,8 @@ def get_cashflow(
 def get_income_statement(
     ticker: Annotated[str, "ticker symbol of the company"],
     freq: Annotated[str, "frequency of data: 'annual' or 'quarterly'"] = "quarterly",
-    curr_date: Annotated[str, "current date in YYYY-MM-DD format"] = None
-):
+    curr_date: Annotated[str | None, "current date in YYYY-MM-DD format"] = None,
+) -> str:
     """Get income statement data from yfinance."""
     canonical = normalize_symbol(ticker)
     try:

@@ -1,8 +1,10 @@
 """Test checkpoint resume: crash mid-analysis, re-run resumes from last node."""
 
-import tempfile
 import unittest
+import shutil
+from pathlib import Path
 from typing import TypedDict
+from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
 
@@ -44,7 +46,15 @@ def _build_graph() -> StateGraph:
 
 class TestCheckpointResume(unittest.TestCase):
     def setUp(self):
-        self.tmpdir = tempfile.mkdtemp()
+        self._temp_dir = (
+            Path(__file__).resolve().parents[1]
+            / ".pytest_cache"
+            / "tmp"
+            / f"checkpoint-{uuid4().hex}"
+        )
+        self._temp_dir.mkdir(parents=True)
+        self.addCleanup(lambda: shutil.rmtree(self._temp_dir, ignore_errors=True))
+        self.tmpdir = str(self._temp_dir)
         self.ticker = "TEST"
         self.date = "2026-04-20"
 

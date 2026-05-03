@@ -1,40 +1,31 @@
 import datetime
-import os
-import sys
 import time
 from collections import deque
-from functools import wraps
 from pathlib import Path
+from typing import Any, cast
 
 import typer
+from dotenv import load_dotenv
 from rich import box
 from rich.align import Align
-from rich.console import Console
+from rich.console import Console, RenderableType
 from rich.layout import Layout
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.spinner import Spinner
-from rich.table import Table
 from rich.text import Text
+from rich.table import Table
 
-from cli.announcements import display_announcements, fetch_announcements
+from cli.announcements import fetch_announcements, display_announcements
 from cli.stats_handler import StatsCallbackHandler
 from cli.utils import (
     ask_anthropic_effort,
     ask_gemini_thinking_config,
-    ask_glm_region,
-    ask_minimax_region,
     ask_openai_reasoning_effort,
     ask_output_language,
-    ask_qwen_region,
-    confirm_ollama_endpoint,
-    detect_asset_type,
-    ensure_api_key,
-    get_ticker,
-    prompt_openai_compatible_url,
-    resolve_backend_url,
+    normalize_ticker_symbol,
     select_analysts,
     select_deep_thinking_agent,
     select_llm_provider,
@@ -42,14 +33,11 @@ from cli.utils import (
     select_shallow_thinking_agent,
 )
 from tradingagents.default_config import DEFAULT_CONFIG
-from tradingagents.graph.analyst_execution import (
-    AnalystWallTimeTracker,
-    build_analyst_execution_plan,
-    get_initial_analyst_node,
-    sync_analyst_tracker_from_chunk,
-)
 from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.reporting import write_report_tree
+
+# Load environment variables
+load_dotenv()
+load_dotenv(".env.enterprise", override=False)
 
 console = Console()
 
@@ -103,16 +91,17 @@ class MessageBuffer:
         "final_trade_decision": (None, "Portfolio Manager"),
     }
 
-    def __init__(self, max_length=100):
-        self.messages = deque(maxlen=max_length)
-        self.tool_calls = deque(maxlen=max_length)
+    def __init__(self, max_length=100, logger: "RunLogger | None" = None):
+        self.messages: deque[Any] = deque(maxlen=max_length)
+        self.tool_calls: deque[Any] = deque(maxlen=max_length)
+        self.logger = logger
         self.current_report = None
         self.final_report = None  # Store the complete final report
-        self.agent_status = {}
+        self.agent_status: dict[str, str] = {}
         self.current_agent = None
-        self.report_sections = {}
-        self.selected_analysts = []
-        self._processed_message_ids = set()
+        self.report_sections: dict[str, str] = {}
+        self.selected_analysts: list[str] = []
+        self._processed_message_ids: set[str] = set()
 
     def init_for_analysis(self, selected_analysts):
         """Initialize agent status and report sections based on selected analysts.
@@ -173,10 +162,14 @@ class MessageBuffer:
     def add_message(self, message_type, content):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.messages.append((timestamp, message_type, content))
+        if self.logger:
+            self.logger.log_message(timestamp, message_type, content)
 
     def add_tool_call(self, tool_name, args):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.tool_calls.append((timestamp, tool_name, args))
+        if self.logger:
+            self.logger.log_tool_call(timestamp, tool_name, args)
 
     def update_agent_status(self, agent, status):
         if agent in self.agent_status:
@@ -187,6 +180,10 @@ class MessageBuffer:
         if section_name in self.report_sections:
             self.report_sections[section_name] = content
             self._update_current_report()
+            if self.logger and self.report_sections[section_name] is not None:
+                self.logger.write_report_section(
+                    section_name, self.report_sections[section_name]
+                )
 
     def _update_current_report(self):
         # For the panel display, only show the most recently updated section
@@ -259,7 +256,25 @@ class MessageBuffer:
         self.final_report = "\n\n".join(report_parts) if report_parts else None
 
 
-message_buffer = MessageBuffer()
+class RunLogger:
+    def __init__(self, log_file: Path, report_dir: Path):
+        self.log_file = log_file
+        self.report_dir = report_dir
+
+    def log_message(self, timestamp: str, message_type: str, content: str) -> None:
+        text = str(content).replace("\n", " ")
+        with open(self.log_file, "a", encoding="utf-8") as f:
+            f.write(f"{timestamp} [{message_type}] {text}\n")
+
+    def log_tool_call(self, timestamp: str, tool_name: str, args: dict) -> None:
+        args_str = ", ".join(f"{k}={v}" for k, v in args.items())
+        with open(self.log_file, "a", encoding="utf-8") as f:
+            f.write(f"{timestamp} [Tool Call] {tool_name}({args_str})\n")
+
+    def write_report_section(self, section_name: str, content: str | list) -> None:
+        text = "\n".join(str(item) for item in content) if isinstance(content, list) else content
+        with open(self.report_dir / f"{section_name}.md", "w", encoding="utf-8") as f:
+            f.write(text)
 
 
 def create_layout():
@@ -285,7 +300,7 @@ def format_tokens(n):
     return str(n)
 
 
-def update_display(layout, spinner_text=None, stats_handler=None, start_time=None):
+def update_display(layout, message_buffer: MessageBuffer, spinner_text=None, stats_handler=None, start_time=None):
     # Header with welcome message
     layout["header"].update(
         Panel(
@@ -337,6 +352,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
         # Add first agent with team name
         first_agent = agents[0]
         status = message_buffer.agent_status.get(first_agent, "pending")
+        status_cell: RenderableType
         if status == "in_progress":
             spinner = Spinner(
                 "dots", text="[blue]in_progress[/blue]", style="bold cyan"
@@ -826,7 +842,7 @@ def display_complete_report(final_state):
             console.print(Panel(Markdown(risk["judge_decision"]), title="Portfolio Manager", border_style="blue", padding=(1, 2)))
 
 
-def update_research_team_status(status):
+def update_research_team_status(message_buffer: MessageBuffer, status):
     """Update status for research team members (not Trader)."""
     research_team = ["Bull Researcher", "Bear Researcher", "Research Manager"]
     for agent in research_team:
@@ -994,18 +1010,9 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     config["openai_reasoning_effort"] = selections.get("openai_reasoning_effort")
     config["anthropic_effort"] = selections.get("anthropic_effort")
     config["output_language"] = selections.get("output_language", "English")
-    # --checkpoint/--no-checkpoint overrides only when explicitly given; omitting
-    # the flag preserves TRADINGAGENTS_CHECKPOINT_ENABLED / the default (#976).
-    if checkpoint is not None:
-        config["checkpoint_enabled"] = checkpoint
-    return config
-
-
-def run_analysis(checkpoint: bool | None = None):
-    # First get all user selections
-    selections = get_user_selections()
-
-    config = _build_run_config(selections, checkpoint)
+    config["checkpoint_enabled"] = checkpoint
+    safe_ticker = normalize_ticker_symbol(selections["ticker"])
+    selections["ticker"] = safe_ticker
 
     # Create stats callback handler for tracking LLM/tool calls
     stats_handler = StatsCallbackHandler()
@@ -1024,66 +1031,26 @@ def run_analysis(checkpoint: bool | None = None):
         callbacks=[stats_handler],
     )
 
-    # Initialize message buffer with selected analysts
-    message_buffer.init_for_analysis(selected_analyst_keys)
-
     # Track start time for elapsed display
     start_time = time.time()
 
     # Create result directory
-    results_dir = Path(config["results_dir"]) / selections["ticker"] / selections["analysis_date"]
+    results_dir = Path(cast(str, config["results_dir"])) / safe_ticker / selections["analysis_date"]
     results_dir.mkdir(parents=True, exist_ok=True)
     report_dir = results_dir / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
     log_file = results_dir / "message_tool.log"
     log_file.touch(exist_ok=True)
 
-    def save_message_decorator(obj, func_name):
-        func = getattr(obj, func_name)
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            func(*args, **kwargs)
-            timestamp, message_type, content = obj.messages[-1]
-            content = content.replace("\n", " ")  # Replace newlines with spaces
-            with open(log_file, "a", encoding="utf-8") as f:
-                f.write(f"{timestamp} [{message_type}] {content}\n")
-        return wrapper
-
-    def save_tool_call_decorator(obj, func_name):
-        func = getattr(obj, func_name)
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            func(*args, **kwargs)
-            timestamp, tool_name, args = obj.tool_calls[-1]
-            args_str = ", ".join(f"{k}={v}" for k, v in args.items())
-            with open(log_file, "a", encoding="utf-8") as f:
-                f.write(f"{timestamp} [Tool Call] {tool_name}({args_str})\n")
-        return wrapper
-
-    def save_report_section_decorator(obj, func_name):
-        func = getattr(obj, func_name)
-        @wraps(func)
-        def wrapper(section_name, content):
-            func(section_name, content)
-            if section_name in obj.report_sections and obj.report_sections[section_name] is not None:
-                content = obj.report_sections[section_name]
-                if content:
-                    file_name = f"{section_name}.md"
-                    text = "\n".join(str(item) for item in content) if isinstance(content, list) else content
-                    with open(report_dir / file_name, "w", encoding="utf-8") as f:
-                        f.write(text)
-        return wrapper
-
-    message_buffer.add_message = save_message_decorator(message_buffer, "add_message")
-    message_buffer.add_tool_call = save_tool_call_decorator(message_buffer, "add_tool_call")
-    message_buffer.update_report_section = save_report_section_decorator(message_buffer, "update_report_section")
+    message_buffer = MessageBuffer(logger=RunLogger(log_file, report_dir))
+    message_buffer.init_for_analysis(selected_analyst_keys)
 
     # Now start the display layout
     layout = create_layout()
 
     with Live(layout, refresh_per_second=4):
         # Initial display
-        update_display(layout, stats_handler=stats_handler, start_time=start_time)
+        update_display(layout, message_buffer, stats_handler=stats_handler, start_time=start_time)
 
         # Add initial messages
         message_buffer.add_message("System", f"Selected ticker: {selections['ticker']}")
@@ -1096,19 +1063,18 @@ def run_analysis(checkpoint: bool | None = None):
             "System",
             f"Selected analysts: {', '.join(analyst.value for analyst in selections['analysts'])}",
         )
-        update_display(layout, stats_handler=stats_handler, start_time=start_time)
+        update_display(layout, message_buffer, stats_handler=stats_handler, start_time=start_time)
 
         # Update agent status to in_progress for the first analyst
         first_analyst = get_initial_analyst_node(analyst_execution_plan)
         message_buffer.update_agent_status(first_analyst, "in_progress")
-        analyst_wall_time_tracker.mark_started(selected_analyst_keys[0])
-        update_display(layout, stats_handler=stats_handler, start_time=start_time)
+        update_display(layout, message_buffer, stats_handler=stats_handler, start_time=start_time)
 
         # Create spinner text
         spinner_text = (
             f"Analyzing {selections['ticker']} on {selections['analysis_date']}..."
         )
-        update_display(layout, spinner_text, stats_handler=stats_handler, start_time=start_time)
+        update_display(layout, message_buffer, spinner_text, stats_handler=stats_handler, start_time=start_time)
 
         # Initialize state and get graph args with callbacks.
         # Resolve the instrument identity once here so all agents anchor to
@@ -1161,11 +1127,38 @@ def run_analysis(checkpoint: bool | None = None):
                             else:
                                 message_buffer.add_tool_call(tool_call.name, tool_call.args)
 
-                # Update analyst statuses based on report state (runs on every chunk)
-                update_analyst_statuses(
-                    message_buffer,
-                    chunk,
-                    wall_time_tracker=analyst_wall_time_tracker,
+            # Update analyst statuses based on report state (runs on every chunk)
+            update_analyst_statuses(message_buffer, chunk)
+
+            # Research Team - Handle Investment Debate State
+            if chunk.get("investment_debate_state"):
+                debate_state = chunk["investment_debate_state"]
+                bull_hist = debate_state.get("bull_history", "").strip()
+                bear_hist = debate_state.get("bear_history", "").strip()
+                judge = debate_state.get("judge_decision", "").strip()
+
+                # Only update status when there's actual content
+                if bull_hist or bear_hist:
+                    update_research_team_status(message_buffer, "in_progress")
+                if bull_hist:
+                    message_buffer.update_report_section(
+                        "investment_plan", f"### Bull Researcher Analysis\n{bull_hist}"
+                    )
+                if bear_hist:
+                    message_buffer.update_report_section(
+                        "investment_plan", f"### Bear Researcher Analysis\n{bear_hist}"
+                    )
+                if judge:
+                    message_buffer.update_report_section(
+                        "investment_plan", f"### Research Manager Decision\n{judge}"
+                    )
+                    update_research_team_status(message_buffer, "completed")
+                    message_buffer.update_agent_status("Trader", "in_progress")
+
+            # Trading Team
+            if chunk.get("trader_investment_plan"):
+                message_buffer.update_report_section(
+                    "trader_investment_plan", chunk["trader_investment_plan"]
                 )
 
                 # Research Team - Handle Investment Debate State
@@ -1238,25 +1231,14 @@ def run_analysis(checkpoint: bool | None = None):
                         message_buffer.update_agent_status("Neutral Analyst", "completed")
                         message_buffer.update_agent_status("Portfolio Manager", "completed")
 
-                # Update the display
-                update_display(layout, stats_handler=stats_handler, start_time=start_time)
+            # Update the display
+            update_display(layout, message_buffer, stats_handler=stats_handler, start_time=start_time)
 
                 trace.append(chunk)
 
-            # Clean run: drop this run's checkpoint so a later run starts fresh.
-            # A mid-stream failure skips this, keeping the checkpoint for resume.
-            graph.clear_checkpoint_on_success(
-                selections["ticker"], selections["analysis_date"], selections["asset_type"]
-            )
-        finally:
-            # Always restore the plain uncheckpointed graph, even on failure.
-            graph.end_checkpoint()
-
-        # Streamed chunks are per-node deltas, not full state. Merge them
-        # so every report field populated across the run is present.
-        final_state = {}
-        for chunk in trace:
-            final_state.update(chunk)
+        # Get final state and decision
+        final_state = trace[-1]
+        graph.process_signal(final_state["final_trade_decision"])
 
         # Update all agent statuses to completed
         for agent in message_buffer.agent_status:
@@ -1272,7 +1254,7 @@ def run_analysis(checkpoint: bool | None = None):
             if section in final_state:
                 message_buffer.update_report_section(section, final_state[section])
 
-        update_display(layout, stats_handler=stats_handler, start_time=start_time)
+        update_display(layout, message_buffer, stats_handler=stats_handler, start_time=start_time)
 
     # Post-analysis prompts (outside Live context for clean interaction)
     console.print("\n[bold cyan]Analysis Complete![/bold cyan]\n")
@@ -1317,7 +1299,7 @@ def analyze(
 ):
     if clear_checkpoints:
         from tradingagents.graph.checkpointer import clear_all_checkpoints
-        n = clear_all_checkpoints(DEFAULT_CONFIG["data_cache_dir"])
+        n = clear_all_checkpoints(cast(str, DEFAULT_CONFIG["data_cache_dir"]))
         console.print(f"[yellow]Cleared {n} checkpoint(s).[/yellow]")
     try:
         run_analysis(checkpoint=checkpoint)

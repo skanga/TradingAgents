@@ -1,12 +1,12 @@
-import os
-from pathlib import Path
+import questionary
+from typing import List, Tuple
 
 import questionary
 from dotenv import find_dotenv, set_key
 from rich.console import Console
 
-from cli.models import AnalystType, AssetType
-from tradingagents.llm_clients.api_key_env import get_api_key_env
+from cli.models import AnalystType
+from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.llm_clients.model_catalog import get_model_options
 
 console = Console()
@@ -42,11 +42,8 @@ def get_ticker() -> str:
     obvious typo is caught before the run starts.
     """
     ticker = questionary.text(
-        f"Enter ticker symbol (e.g. {TICKER_INPUT_EXAMPLES}):",
-        validate=lambda x: (
-            is_valid_ticker_input(x)
-            or "Please enter a valid ticker symbol, e.g. AAPL, 000404.SZ, 0700.HK, GC=F."
-        ),
+        f"Enter the exact ticker symbol to analyze ({TICKER_INPUT_EXAMPLES}):",
+        validate=_validate_ticker_input,
         style=questionary.Style(
             [
                 ("text", "fg:green"),
@@ -63,40 +60,17 @@ def get_ticker() -> str:
 
 
 def normalize_ticker_symbol(ticker: str) -> str:
-    """Resolve user input to its canonical Yahoo symbol (single source of truth).
+    """Normalize ticker input while preserving exchange suffixes and rejecting unsafe path components."""
+    normalized = ticker.strip().upper()
+    return safe_ticker_component(normalized)
 
-    Delegates to the data layer's ``normalize_symbol`` so the symbol the CLI
-    passes through the pipeline is exactly the one the data path will price
-    (e.g. ``BTCUSD`` -> ``BTC-USD``, ``XAUUSD`` -> ``GC=F``). Falls back to the
-    plain upper-case if the data layer is unavailable.
-    """
+
+def _validate_ticker_input(value: str) -> bool | str:
     try:
-        from tradingagents.dataflows.symbol_utils import normalize_symbol
-
-        return normalize_symbol(ticker)
-    except Exception:
-        return ticker.strip().upper()
-
-
-def detect_asset_type(ticker: str) -> AssetType:
-    """Classify on the canonical symbol so e.g. BTCUSD and BTC-USDT both read as
-    crypto (#981/#982), matching what the data path will actually fetch."""
-    canonical = normalize_ticker_symbol(ticker)
-    if canonical.endswith(CRYPTO_SUFFIXES):
-        return AssetType.CRYPTO
-    return AssetType.STOCK
-
-
-def filter_analysts_for_asset_type(
-    analysts: list[AnalystType], asset_type: AssetType
-) -> list[AnalystType]:
-    if asset_type != AssetType.CRYPTO:
-        return analysts
-    return [
-        analyst
-        for analyst in analysts
-        if analyst != AnalystType.FUNDAMENTALS
-    ]
+        normalize_ticker_symbol(value)
+        return True
+    except ValueError as exc:
+        return str(exc)
 
 
 def get_analysis_date() -> str:
