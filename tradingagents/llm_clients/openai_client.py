@@ -321,11 +321,10 @@ class OpenAIClient(BaseLLMClient):
 
         # Forward user-provided kwargs
         for key in _PASSTHROUGH_KWARGS:
-            if key not in self.kwargs:
-                continue
-            if key == "reasoning_effort" and not _supports_reasoning_effort(self.model):
-                continue
-            llm_kwargs[key] = self.kwargs[key]
+            if key in self.kwargs:
+                if key == "reasoning_effort" and self.provider == "openai" and self.base_url:
+                    continue
+                llm_kwargs[key] = self.kwargs[key]
 
         # Native OpenAI: use Responses API for consistent behavior across
         # all model families. Third-party providers use Chat Completions.
