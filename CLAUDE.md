@@ -29,7 +29,7 @@ Run the screener pipeline (batch run over Finviz candidates):
 ```bash
 python pipeline.py
 ```
-Knobs live in `config.py` at the repo root: `finviz_filters`, `max_tickers_per_run`, `cache_ttl_hours`, plus a `tradingagents_config` block that copies `DEFAULT_CONFIG` and applies screener-level overrides (LLM provider, per-role models). The screener writes one JSON per analysis to `results/by_ticker/{TICKER}/` with a relative symlink under `results/by_date/{YYYYMMDD}/` (Windows-safe stub fallback).
+Knobs live in `config.py` at the repo root: `finviz_filters`, `max_tickers_per_run`, `cache_ttl_hours`, plus a `tradingagents_config` block that copies `DEFAULT_CONFIG` and applies screener-level overrides (LLM provider, per-role models). The screener writes one JSON per analysis to `results/by_ticker/{TICKER}/` with a relative symlink under `results/by_run/{YYYY_MM_DD_HH_mm_ss}/` (Windows-safe stub fallback). The same per-run folder also holds `pipeline.log` when the run is launched via `run.sh` (which backgrounds analyze runs and redirects stdout+stderr there).
 
 Tests (pytest, configured in `pyproject.toml`):
 ```bash
@@ -143,7 +143,7 @@ Everything user-state-shaped lives under `~/.tradingagents/` by default:
 
 The memory log uses an HTML-comment separator (`<!-- ENTRY_END -->`) as a hard delimiter that LLM prose cannot accidentally produce. Entries start as `pending` and are resolved in-place once price data is available.
 
-The screener writes its own JSON output under `./results/by_ticker/<TICKER>/<YYYYMMDD_HHMMSS>_<TICKER>.json` with a relative symlink under `./results/by_date/<YYYYMMDD>/`.
+The screener writes its own JSON output under `./results/by_ticker/<TICKER>/<TICKER>_<YYYYMMDD_HHMMSS>.json` with a same-basename relative symlink under `./results/by_run/<YYYY_MM_DD_HH_mm_ss>/`. When invoked through `run.sh`, the run folder also receives `pipeline.log` (full stdout+stderr capture) and the run is detached via `nohup`.
 
 ## Coding conventions specific to this repo
 
@@ -165,7 +165,7 @@ screener/
   finviz_filter.py                   # get_candidates() with TTL cache
   queue_manager.py                   # already_run_today / build_queue / mark_complete
   cache/                             # finviz_cache.json
-results/                             # by_ticker/ + by_date/ — populated at runtime
+results/                             # by_ticker/ + by_run/ — populated at runtime
 
 main.py                              # minimal library-usage example
 cli/main.py                          # `tradingagents analyze` Typer app + Rich UI loop

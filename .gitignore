@@ -221,3 +221,7 @@ __marimo__/
 # Screener pipeline outputs
 results/
 screener/cache/
+
+# Personal watchlists (--screen-only output / --ticker-file input)
+watchlist.txt
+watchlist*.txt

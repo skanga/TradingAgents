@@ -54,27 +54,35 @@ if [[ ! -f .env ]] \
     echo "[run.sh] Set OPENROUTER_API_KEY (or your provider's key) before running." >&2
 fi
 
-# Run the pipeline. Args pass through verbatim.
-$PYTHON pipeline.py "$@"
-status=$?
-
-# After a successful, non-dry-run analyze, show what was written today.
-# Screen-only and dry-run modes don't produce reports, so skip the listing.
-skip_summary=0
+# Decide whether to background. Analyze runs are long, so they detach by
+# default; fast/interactive modes (--help, --dry-run, --screen-only) keep
+# blocking behavior so their output prints to the terminal.
+should_background=1
 for arg in "$@"; do
-    if [[ "$arg" == "--dry-run" || "$arg" == "--screen-only" || "$arg" == --screen-only=* ]]; then
-        skip_summary=1
-        break
-    fi
+    case "$arg" in
+        --help|-h|--dry-run|--screen-only|--screen-only=*)
+            should_background=0 ;;
+    esac
 done
 
-if [[ $status -eq 0 ]] && [[ $skip_summary -eq 0 ]]; then
-    today=$(date +%Y%m%d)
-    if [[ -d "results/by_date/$today" ]]; then
-        echo ""
-        echo "[run.sh] Reports written today (results/by_date/$today/):"
-        ls -lh "results/by_date/$today/" | tail -n +2
-    fi
+run_id=$(date +%Y_%m_%d_%H_%M_%S)
+
+if [[ $should_background -eq 1 ]]; then
+    run_dir="results/by_run/$run_id"
+    logfile="$run_dir/pipeline.log"
+    mkdir -p "$run_dir"
+    echo ""
+    echo "[run.sh] Run started in background (id: $run_id)"
+    echo "[run.sh]   Run dir : $run_dir"
+    echo "[run.sh]   Log     : $logfile"
+    echo "[run.sh]   Watch   : tail -f $logfile"
+    PYTHONUNBUFFERED=1 nohup "$PYTHON" pipeline.py --run-id "$run_id" "$@" \
+        > "$logfile" 2>&1 &
+    echo "[run.sh]   PID     : $!"
+    echo ""
+    exit 0
 fi
 
-exit $status
+# Foreground mode: run synchronously and surface the exit status.
+"$PYTHON" pipeline.py "$@"
+exit $?

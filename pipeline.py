@@ -83,6 +83,15 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--run-id",
+        metavar="ID",
+        help=(
+            "Identifier for this analysis run (default: a YYYY_MM_DD_HH_mm_ss "
+            "timestamp). Names the folder under results/by_run/ where "
+            "per-ticker symlinks and the run log land."
+        ),
+    )
+    parser.add_argument(
         "--rerun-today",
         action="store_true",
         help="Bypass the today-already-run dedup; useful for retrying a partially failed batch.",
@@ -131,6 +140,12 @@ def _configure_logging(args: argparse.Namespace) -> None:
     )
 
 
+def _banner(title: str, *, char: str = "=", width: int = 70) -> None:
+    """Print a section header to stdout."""
+    line = char * width
+    print(f"\n{line}\n  {title}\n{line}")
+
+
 def _parse_ticker_list_arg(raw: str) -> list[str]:
     """Parse a comma-separated ticker string. Validates each via safe_ticker_component."""
     from tradingagents.dataflows.utils import safe_ticker_component
@@ -146,6 +161,7 @@ def _parse_ticker_list_arg(raw: str) -> list[str]:
             raise SystemExit(f"--tickers: rejected {sym!r}: {e}")
         out.append(sym)
         seen.add(sym)
+    logger.info("Parsed %d tickers from --tickers", len(out))
     return out
 
 
@@ -154,16 +170,21 @@ def _read_ticker_file(path: Path) -> list[str]:
     from tradingagents.dataflows.utils import safe_ticker_component
     if not path.is_file():
         raise SystemExit(f"--ticker-file: not a file: {path}")
+    raw_lines = path.read_text(encoding="utf-8").splitlines()
     out: list[str] = []
     seen: set[str] = set()
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    skipped_dupes = 0
+    for raw_line in raw_lines:
         # Strip inline '#' comments and whitespace, then split on commas.
         line = raw_line.split("#", 1)[0].strip()
         if not line:
             continue
         for chunk in line.split(","):
             sym = chunk.strip().upper()
-            if not sym or sym in seen:
+            if not sym:
+                continue
+            if sym in seen:
+                skipped_dupes += 1
                 continue
             try:
                 safe_ticker_component(sym)
@@ -171,6 +192,10 @@ def _read_ticker_file(path: Path) -> list[str]:
                 raise SystemExit(f"--ticker-file: rejected {sym!r} in {path}: {e}")
             out.append(sym)
             seen.add(sym)
+    logger.info(
+        "Read %d tickers from %s (%d raw lines, %d duplicates skipped)",
+        len(out), path, len(raw_lines), skipped_dupes,
+    )
     return out
 
 
@@ -215,12 +240,15 @@ def _do_screen_only(args: argparse.Namespace) -> None:
     if args.filter_overrides:
         filters.update(_parse_filter_overrides(args.filter_overrides))
 
+    _banner("Finviz Screener (--screen-only)")
+    print(f"  Filters    : {filters}")
+
     candidates = get_candidates(filters)
     if not candidates:
         logger.error("No candidates from Finviz; nothing written.")
         sys.exit(1)
 
-    out_path = Path(args.screen_only)
+    out_path = Path(args.screen_only).resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     header = [
         f"# Finviz screener candidates ({len(candidates)})",
@@ -230,28 +258,18 @@ def _do_screen_only(args: argparse.Namespace) -> None:
         f"#   python pipeline.py --ticker-file {out_path}",
         "",
     ]
-    out_path.write_text(
-        "\n".join(header + candidates) + "\n",
-        encoding="utf-8",
-    )
-    print(f"Wrote {len(candidates)} candidates to {out_path}")
+    content = "\n".join(header + candidates) + "\n"
+    out_path.write_text(content, encoding="utf-8")
+
+    print(f"  Candidates : {len(candidates)}")
+    print(f"  Output file: {out_path}")
+    logger.info("Wrote %d candidates to %s", len(candidates), out_path)
+
+    _banner("File contents", char="-")
+    print(content, end="")
+    _banner("Done", char="-")
 
 
-def _print_dry_run(
-    source_label: str,
-    candidates: list[str],
-    queue: list[str],
-    already_run: int,
-    deferred: int,
-) -> None:
-    print("[dry run] no LLM calls were made, no files written.")
-    print(f"  Source            : {source_label}")
-    print(f"  Total candidates  : {len(candidates)}")
-    print(f"  Already run today : {already_run}")
-    print(f"  Deferred (over cap): {deferred}")
-    print(f"  Would analyse ({len(queue)}):")
-    for i, t in enumerate(queue, start=1):
-        print(f"    {i:2d}. {t}")
 
 
 # --- Main ------------------------------------------------------------------
@@ -268,6 +286,13 @@ def main(argv: list[str] | None = None) -> None:
         _do_screen_only(args)
         return
 
+    today = datetime.now().strftime("%Y-%m-%d")
+    ta_cfg = CONFIG["tradingagents_config"]
+    run_id = args.run_id or datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    run_dir = output_dir / "by_run" / run_id
+
+    _banner(f"TradingAgents pipeline — {today}")
+
     candidates, source_label = _resolve_candidates(args)
     if not candidates:
         logger.error("No candidate tickers (source: %s); aborting.", source_label)
@@ -283,15 +308,30 @@ def main(argv: list[str] | None = None) -> None:
     )
     deferred = len(candidates) - len(queue) - already_run
 
+    print(f"  Source       : {source_label}")
+    print(f"  Output dir   : {output_dir}")
+    print(f"  Provider     : {ta_cfg.get('llm_provider')}")
+    print(f"  Deep think   : {ta_cfg.get('deep_think_llm')}")
+    print(f"  Quick think  : {ta_cfg.get('quick_think_llm')}")
+    print(f"  Max tickers  : {max_tickers}")
+    print(f"  Queue size   : {len(queue)}")
+    print(f"  Already run  : {already_run}")
+    print(f"  Deferred(cap): {deferred}")
+    if queue:
+        print(f"  Tickers      : {', '.join(queue)}")
+
     if args.dry_run:
-        _print_dry_run(source_label, candidates, queue, already_run, deferred)
+        _banner("Dry run — no LLM calls, no writes", char="-")
         return
 
     if not queue:
         logger.info("Nothing to do — queue is empty after dedup + cap.")
+        _banner("Summary", char="-")
         print(
-            f"\nSummary: 0 analyzed, 0 failed, "
-            f"{already_run} already run today, {deferred} deferred (over cap)"
+            f"  Analyzed         : 0\n"
+            f"  Failed           : 0\n"
+            f"  Already run today: {already_run}\n"
+            f"  Deferred (cap)   : {deferred}"
         )
         return
 
@@ -299,32 +339,44 @@ def main(argv: list[str] | None = None) -> None:
     # the LangGraph compile cost.
     from tradingagents.graph.trading_graph import TradingAgentsGraph  # noqa: E402
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    print(f"  Run dir      : {run_dir}")
+
+    _banner("Analyzing tickers", char="-")
     analyzed = failed = 0
 
     for i, ticker in enumerate(queue, start=1):
-        print(f"[{i}/{len(queue)}] Analyzing {ticker}...")
+        print(f"\n[{i}/{len(queue)}] Analyzing {ticker}...", flush=True)
         try:
-            ta = TradingAgentsGraph(config=CONFIG["tradingagents_config"])
+            ta = TradingAgentsGraph(config=ta_cfg)
             state, decision = ta.propagate(ticker, today)
-            save_result(
+            json_path = save_result(
                 ticker=ticker,
                 state=state,
                 decision=decision,
                 results_dir=output_dir,
+                run_dir=run_dir,
                 ta=ta,
                 trade_date=today,
             )
+            md_path = json_path.with_suffix(".md")
             mark_complete(ticker, output_dir)
             analyzed += 1
+            print(f"  → Decision : {decision}")
+            print(f"  → JSON     : {json_path}")
+            print(f"  → Markdown : {md_path}")
         except Exception as e:
             logger.exception("Analysis failed for %s: %s", ticker, e)
             failed += 1
+            print(f"  → FAILED   : {e}")
             continue
 
+    _banner("Summary", char="-")
     print(
-        f"\nSummary: {analyzed} analyzed, {failed} failed, "
-        f"{already_run} already run today, {deferred} deferred (over cap)"
+        f"  Analyzed         : {analyzed}\n"
+        f"  Failed           : {failed}\n"
+        f"  Already run today: {already_run}\n"
+        f"  Deferred (cap)   : {deferred}"
     )
 
 
@@ -334,16 +386,16 @@ def save_result(
     state: Any,
     decision: Any,
     results_dir: Path,
+    run_dir: Path,
     ta: Any = None,
     trade_date: str | None = None,
 ) -> Path:
-    """Persist one analysis to ``results/by_ticker/`` and link from ``results/by_date/``."""
+    """Persist one analysis to ``results/by_ticker/`` and link from ``run_dir``."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    date_str = timestamp.split("_")[0]
 
     by_ticker_dir = results_dir / "by_ticker" / ticker
     by_ticker_dir.mkdir(parents=True, exist_ok=True)
-    by_ticker_file = by_ticker_dir / f"{timestamp}_{ticker}.json"
+    by_ticker_file = by_ticker_dir / f"{ticker}_{timestamp}.json"
 
     # Prefer the fork's pre-flattened JSON-safe state if available; otherwise
     # coerce the raw propagation state by stringifying any non-JSON values.
@@ -373,15 +425,14 @@ def save_result(
         state=clean_state if isinstance(clean_state, dict) else {},
         decision=decision,
     )
-    by_ticker_md = by_ticker_dir / f"{timestamp}_{ticker}.md"
+    by_ticker_md = by_ticker_dir / f"{ticker}_{timestamp}.md"
     by_ticker_md.write_text(md_text, encoding="utf-8")
 
-    by_date_dir = results_dir / "by_date" / date_str
-    by_date_dir.mkdir(parents=True, exist_ok=True)
-    by_date_link = by_date_dir / f"{ticker}_{timestamp}.json"
-    by_date_md_link = by_date_dir / f"{ticker}_{timestamp}.md"
-    _link_or_stub(target=by_ticker_file, link=by_date_link)
-    _link_or_stub(target=by_ticker_md,   link=by_date_md_link)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    by_run_link = run_dir / f"{ticker}_{timestamp}.json"
+    by_run_md_link = run_dir / f"{ticker}_{timestamp}.md"
+    _link_or_stub(target=by_ticker_file, link=by_run_link)
+    _link_or_stub(target=by_ticker_md,   link=by_run_md_link)
 
     return by_ticker_file
 

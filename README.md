@@ -189,23 +189,75 @@ This fork adds a Finviz-driven batch screener (`pipeline.py` plus a thin `run.sh
 ```bash
 pip install -e .                          # one-time; pulls finvizfinance + python-dotenv on top of upstream deps
 
-./run.sh --tickers AAPL --dry-run         # preview the queue, no LLM calls or writes
-./run.sh --tickers AAPL,MSFT,NVDA         # analyze a hand-picked list
-./run.sh --max-tickers 5                  # screen Finviz, analyze top 5
-./run.sh --screen-only watch.txt          # write Finviz candidates to a file, no agents
-./run.sh --ticker-file watch.txt          # analyze the (edited) list with no Finviz step
-./run.sh --help                           # full CLI surface
+./run.sh --tickers AAPL --dry-run                # preview the queue, no LLM calls or writes
+./run.sh --tickers AAPL,MSFT,NVDA                # analyze a hand-picked list
+./run.sh --max-tickers 5                         # screen Finviz, analyze top 5
+./run.sh --screen-only watchlist.txt             # write Finviz candidates to a file, no agents
+./run.sh --ticker-file watchlist.txt             # analyze the (edited) list with no Finviz step
+./run.sh --help                                  # full CLI surface
 ```
 
-The `--screen-only` → edit → `--ticker-file` flow lets you split the two halves of the pipeline: pull a candidate list, hand-curate it in your editor, then run the agents on just what survives.
+> Setup pointers: see **[Required APIs](#required-apis)** above for LLM-provider keys (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, …) and `.env` placement, **[Optional API keys](#optional-api-keys)** below for the screener's data extras (FRED / Finnhub / SEC), and **[Per-role LLM routing](#per-role-llm-routing)** below for assigning different models to specific agent roles.
 
-Reports land at:
+The `--screen-only` → edit → `--ticker-file` flow lets you split the two halves of the pipeline: pull a candidate list, hand-curate it in your editor, then run the agents on just what survives. A pre-seeded `watchlist.txt` lives at the repo root and is gitignored (along with any `watchlist-*.txt` variants), so your personal picks stay local.
+
+### Run output
+
+Each invocation prints a banner with the run's source, output dir, LLM provider, per-role models, and resolved queue, followed by a per-ticker block with the decision and the JSON / Markdown paths the report landed at:
+
+```
+======================================================================
+  TradingAgents pipeline — 2026-05-04
+======================================================================
+  Source       : --ticker-file watchlist.txt (3 candidates)
+  Output dir   : .../results
+  Provider     : openrouter
+  Deep think   : nvidia/nemotron-3-super-120b-a12b:free
+  Quick think  : openai/gpt-oss-20b:free
+  Tickers      : AAPL, MSFT, NVDA
+  ...
+---------------------------------------------------------------------- 
+  Analyzing tickers
+---------------------------------------------------------------------- 
+[1/3] Analyzing AAPL...
+  → Decision : Buy
+  → JSON     : results/by_ticker/AAPL/AAPL_20260504_090000.json
+  → Markdown : results/by_ticker/AAPL/AAPL_20260504_090000.md
+...
+---------------------------------------------------------------------- 
+  Summary
+---------------------------------------------------------------------- 
+  Analyzed         : 3
+  Failed           : 0
+  Already run today: 0
+  Deferred (cap)   : 0
+```
+
+### Background runs
+
+Analyze invocations via `run.sh` (anything that isn't `--help`, `--dry-run`, or `--screen-only`) detach into the background by default. `run.sh` prints the run id, run dir, log path, and a `tail -f` command so you can watch progress, then returns control of the shell:
+
+```
+[run.sh] Run started in background (id: 2026_05_04_09_30_15)
+[run.sh]   Run dir : results/by_run/2026_05_04_09_30_15
+[run.sh]   Log     : results/by_run/2026_05_04_09_30_15/pipeline.log
+[run.sh]   Watch   : tail -f results/by_run/2026_05_04_09_30_15/pipeline.log
+[run.sh]   PID     : 12345
+```
+
+Kill an in-flight run with `kill <PID>`. Direct invocations of `pipeline.py` stay foregrounded — `run.sh` is what adds the detach.
+
+### Reports land at
 
 ```
 results/
-├── by_ticker/{TICKER}/{YYYYMMDD_HHMMSS}_{TICKER}.{json,md}
-└── by_date/{YYYYMMDD}/{TICKER}_{YYYYMMDD_HHMMSS}.{json,md}   ← relative symlinks
+├── by_ticker/{TICKER}/{TICKER}_{YYYYMMDD_HHMMSS}.{json,md}        ← canonical store
+└── by_run/{YYYY_MM_DD_HH_mm_ss}/
+    ├── {TICKER}_{YYYYMMDD_HHMMSS}.{json,md}                       ← relative symlinks (same basename)
+    └── pipeline.log                                               ← captured stdout+stderr
 ```
+
+The run-id folder is keyed off the run's start timestamp, so multiple runs on the same day each get their own folder. The canonical JSON/MD reports always live under `by_ticker/`; `by_run/` is just an index by run.
 
 ### CLI flags
 
@@ -214,6 +266,7 @@ results/
 | `--tickers AAPL,MSFT,NVDA` | bypass Finviz, analyze a hand-picked list |
 | `--ticker-file path.txt` | read tickers from a file (one per line; `#` comments OK; comma-on-line OK) |
 | `--screen-only path.txt` | run Finviz, write candidates to `path.txt` (compatible with `--ticker-file`), then exit — no agents |
+| `--run-id ID` | name the `results/by_run/<ID>/` folder (default: `YYYY_MM_DD_HH_mm_ss` timestamp); `run.sh` sets this when backgrounding |
 | `--max-tickers N` | cap the queue (overrides `config.py` `max_tickers_per_run`) |
 | `--dry-run` | resolve the queue and print it, then exit — no LLM calls, no writes |
 | `--rerun-today` | bypass the today-already-run dedup; useful for retrying a partially failed batch |
