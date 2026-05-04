@@ -9,6 +9,7 @@
 #   ./run.sh --tickers AAPL,MSFT,NVDA --max-tickers 2
 #   ./run.sh --ticker-file watchlist.txt
 #   ./run.sh --max-tickers 5                           # screen Finviz, top 5
+#   ./run.sh --screen-only watch.txt                   # write Finviz list, no agents
 #   ./run.sh --filter-overrides "Sector=Technology"
 #   ./run.sh --rerun-today --tickers AAPL              # retry today's failed
 #
@@ -58,12 +59,16 @@ $PYTHON pipeline.py "$@"
 status=$?
 
 # After a successful, non-dry-run analyze, show what was written today.
-is_dry_run=0
+# Screen-only and dry-run modes don't produce reports, so skip the listing.
+skip_summary=0
 for arg in "$@"; do
-    [[ "$arg" == "--dry-run" ]] && is_dry_run=1 && break
+    if [[ "$arg" == "--dry-run" || "$arg" == "--screen-only" || "$arg" == --screen-only=* ]]; then
+        skip_summary=1
+        break
+    fi
 done
 
-if [[ $status -eq 0 ]] && [[ $is_dry_run -eq 0 ]]; then
+if [[ $status -eq 0 ]] && [[ $skip_summary -eq 0 ]]; then
     today=$(date +%Y%m%d)
     if [[ -d "results/by_date/$today" ]]; then
         echo ""

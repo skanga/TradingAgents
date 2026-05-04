@@ -192,8 +192,12 @@ pip install -e .                          # one-time; pulls finvizfinance + pyth
 ./run.sh --tickers AAPL --dry-run         # preview the queue, no LLM calls or writes
 ./run.sh --tickers AAPL,MSFT,NVDA         # analyze a hand-picked list
 ./run.sh --max-tickers 5                  # screen Finviz, analyze top 5
+./run.sh --screen-only watch.txt          # write Finviz candidates to a file, no agents
+./run.sh --ticker-file watch.txt          # analyze the (edited) list with no Finviz step
 ./run.sh --help                           # full CLI surface
 ```
+
+The `--screen-only` → edit → `--ticker-file` flow lets you split the two halves of the pipeline: pull a candidate list, hand-curate it in your editor, then run the agents on just what survives.
 
 Reports land at:
 
@@ -209,6 +213,7 @@ results/
 |---|---|
 | `--tickers AAPL,MSFT,NVDA` | bypass Finviz, analyze a hand-picked list |
 | `--ticker-file path.txt` | read tickers from a file (one per line; `#` comments OK; comma-on-line OK) |
+| `--screen-only path.txt` | run Finviz, write candidates to `path.txt` (compatible with `--ticker-file`), then exit — no agents |
 | `--max-tickers N` | cap the queue (overrides `config.py` `max_tickers_per_run`) |
 | `--dry-run` | resolve the queue and print it, then exit — no LLM calls, no writes |
 | `--rerun-today` | bypass the today-already-run dedup; useful for retrying a partially failed batch |

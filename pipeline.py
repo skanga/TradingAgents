@@ -9,6 +9,7 @@ Run with:
     python pipeline.py                          # screen Finviz, analyse top N
     python pipeline.py --tickers AAPL,MSFT      # bypass Finviz
     python pipeline.py --ticker-file watch.txt  # one ticker per line
+    python pipeline.py --screen-only watch.txt  # write Finviz candidates to a file, no LLM calls
     python pipeline.py --dry-run                # preview the queue, no LLM calls
     python pipeline.py --rerun-today            # bypass already-run dedup
     python pipeline.py --max-tickers 3          # override config cap
@@ -62,6 +63,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "are comments. Comma-separated lines are also OK. Bypasses Finviz."
         ),
     )
+    src.add_argument(
+        "--screen-only",
+        metavar="PATH",
+        help=(
+            "Run the Finviz screener and write candidates to PATH (one ticker "
+            "per line, with a header comment naming the filter), then exit. "
+            "Honours --filter-overrides. Re-feed via --ticker-file after editing."
+        ),
+    )
 
     parser.add_argument(
         "--max-tickers",
@@ -88,7 +98,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Patch the Finviz filter dict from the command line "
             "(e.g. \"Sector=Technology,Price=Over $20\"). "
-            "Ignored when --tickers / --ticker-file is set."
+            "Honoured for the default Finviz run and --screen-only; "
+            "ignored when --tickers / --ticker-file is set."
         ),
     )
 
@@ -198,6 +209,34 @@ def _resolve_candidates(args: argparse.Namespace) -> tuple[list[str], str]:
     return tickers, f"Finviz ({len(tickers)} candidates)"
 
 
+def _do_screen_only(args: argparse.Namespace) -> None:
+    """Resolve Finviz candidates, write them to ``args.screen_only``, exit."""
+    filters = dict(CONFIG["finviz_filters"])
+    if args.filter_overrides:
+        filters.update(_parse_filter_overrides(args.filter_overrides))
+
+    candidates = get_candidates(filters)
+    if not candidates:
+        logger.error("No candidates from Finviz; nothing written.")
+        sys.exit(1)
+
+    out_path = Path(args.screen_only)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    header = [
+        f"# Finviz screener candidates ({len(candidates)})",
+        f"# Generated: {datetime.now().isoformat(timespec='seconds')}",
+        f"# Filters: {filters}",
+        "# Edit this list, then run:",
+        f"#   python pipeline.py --ticker-file {out_path}",
+        "",
+    ]
+    out_path.write_text(
+        "\n".join(header + candidates) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Wrote {len(candidates)} candidates to {out_path}")
+
+
 def _print_dry_run(
     source_label: str,
     candidates: list[str],
@@ -224,6 +263,10 @@ def main(argv: list[str] | None = None) -> None:
 
     output_dir: Path = CONFIG["output_dir"]
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.screen_only:
+        _do_screen_only(args)
+        return
 
     candidates, source_label = _resolve_candidates(args)
     if not candidates:
