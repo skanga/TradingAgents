@@ -13,11 +13,24 @@ class NormalizedChatOpenAI(ChatOpenAI):
 
     The Responses API returns content as a list of typed blocks
     (reasoning, text, etc.). ``invoke`` normalizes to string for
-    consistent downstream handling. ``with_structured_output`` defaults
-    to function-calling so the Responses-API parse path is avoided
-    (langchain-openai's parse path emits noisy
-    PydanticSerializationUnexpectedValue warnings per call without
-    affecting correctness).
+    consistent downstream handling.
+
+    ``with_structured_output`` chooses the binding method based on the
+    transport in use:
+
+    - **Responses API (native OpenAI):** ``function_calling``. The
+      Responses-API json_schema parse path emits noisy
+      ``PydanticSerializationUnexpectedValue`` warnings per call
+      (cosmetic; doesn't affect correctness).
+    - **Chat Completions (OpenRouter, xAI, Qwen, GLM, Ollama):**
+      ``json_schema``. Some free-tier OpenRouter models emit
+      lowercased tool names — e.g. ``'researchPlan'`` instead of the
+      registered ``'ResearchPlan'`` — which langchain's case-sensitive
+      function-calling parser rejects with ``Unknown tool type``. The
+      json_schema path uses ``response_format`` instead of tools and
+      avoids tool-name matching entirely.
+
+    Users can still pass ``method=...`` explicitly to override.
 
     Provider-specific quirks (e.g. DeepSeek's thinking mode) live in
     purpose-built subclasses below so this base class stays small.
@@ -28,7 +41,11 @@ class NormalizedChatOpenAI(ChatOpenAI):
 
     def with_structured_output(self, schema, *, method=None, **kwargs):
         if method is None:
-            method = "function_calling"
+            method = (
+                "function_calling"
+                if getattr(self, "use_responses_api", False)
+                else "json_schema"
+            )
         return super().with_structured_output(schema, method=method, **kwargs)
 
 
