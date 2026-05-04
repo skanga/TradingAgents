@@ -1,7 +1,5 @@
 import os
-import re
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from langchain_core.messages import AIMessage
@@ -277,46 +275,22 @@ class OpenAIClient(BaseLLMClient):
         """Return a configured ChatOpenAI instance, driven by the provider registry."""
         self.warn_if_unknown_model()
         llm_kwargs: dict[str, Any] = {"model": self.model}
+        is_native_openai = self.provider == "openai" and _is_native_openai_base_url(self.base_url)
 
-        if spec is not None:
-            chat_cls = spec.chat_class
-
-            # base_url precedence: explicit client base_url (carries the config /
-            # TRADINGAGENTS_LLM_BACKEND_URL value) > provider env override (e.g.
-            # OLLAMA_BASE_URL) > provider default. None means use the SDK default.
-            env_base_url = os.environ.get(spec.base_url_env) if spec.base_url_env else None
-            base_url = self.base_url or env_base_url or spec.base_url
-            if spec.require_base_url and not base_url:
-                raise ValueError(
-                    f"Provider '{self.provider}' requires a base_url. Set it via "
-                    "backend_url / TRADINGAGENTS_LLM_BACKEND_URL to your endpoint, "
-                    "e.g. http://localhost:8000/v1 (vLLM) or http://localhost:1234/v1 "
-                    "(LM Studio)."
-                )
-            if base_url:
-                llm_kwargs["base_url"] = base_url
-
-            # API key: required unless key_optional; keyless local servers get a
-            # placeholder. The env-var name is the single source in api_key_env.
-            api_key_env = get_api_key_env(self.provider)
-            api_key = os.environ.get(api_key_env) if api_key_env else None
-            if api_key:
-                llm_kwargs["api_key"] = api_key
-            elif spec.key_optional:
-                llm_kwargs["api_key"] = spec.placeholder_key
-            elif api_key_env:
-                raise ValueError(
-                    f"API key for provider '{self.provider}' is not set. "
-                    f"Please set the {api_key_env} environment variable "
-                    f"(e.g. add {api_key_env}=your_key to your .env file)."
-                )
-
-            # The Responses API only exists on native OpenAI; if the user points
-            # the openai provider at a custom base_url (proxy/gateway/local), it
-            # only speaks Chat Completions, so keep Responses off there (#1024).
-            if spec.use_responses_api and _is_native_openai_base_url(base_url):
-                llm_kwargs["use_responses_api"] = True
-        elif self.base_url:
+        # Provider-specific base URL and auth. An explicit base_url on the
+        # client (e.g. a corporate proxy) takes precedence over the
+        # provider default so users can route through their own gateway.
+        if self.provider in _PROVIDER_CONFIG:
+            default_base, api_key_env = _PROVIDER_CONFIG[self.provider]
+            if not is_native_openai:
+                llm_kwargs["base_url"] = self.base_url or default_base
+            if api_key_env:
+                api_key = os.environ.get(api_key_env)
+                if api_key:
+                    llm_kwargs["api_key"] = api_key
+            else:
+                llm_kwargs["api_key"] = "ollama"
+        elif self.base_url and not is_native_openai:
             llm_kwargs["base_url"] = self.base_url
 
         # Forward user-provided kwargs
@@ -328,7 +302,7 @@ class OpenAIClient(BaseLLMClient):
 
         # Native OpenAI: use Responses API for consistent behavior across
         # all model families. Third-party providers use Chat Completions.
-        if self.provider == "openai" and not self.base_url:
+        if is_native_openai:
             llm_kwargs["use_responses_api"] = True
 
         # DeepSeek's thinking-mode quirks live in their own subclass so the
@@ -338,6 +312,17 @@ class OpenAIClient(BaseLLMClient):
 
     def validate_model(self) -> bool:
         """Validate model for the provider."""
-        if self.provider == "openai" and self.base_url:
+        if self.provider == "openai" and not _is_native_openai_base_url(self.base_url):
             return True
         return validate_model(self.provider, self.model)
+
+
+def _is_native_openai_base_url(base_url: Optional[str]) -> bool:
+    if not base_url:
+        return True
+
+    parsed = urlparse(base_url)
+    if parsed.scheme != "https" or parsed.netloc != "api.openai.com":
+        return False
+
+    return parsed.path.rstrip("/") in ("", "/v1")

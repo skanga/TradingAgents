@@ -1,4 +1,5 @@
 import questionary
+import requests
 from typing import List, Tuple
 
 import questionary
@@ -185,7 +186,6 @@ _OPENROUTER_MAINSTREAM = {
 
 def _fetch_openrouter_models() -> list[tuple[str, str]]:
     """Fetch available models from the OpenRouter API."""
-    import requests
     try:
         resp = requests.get("https://openrouter.ai/api/v1/models", timeout=10)
         resp.raise_for_status()
