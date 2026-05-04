@@ -1,14 +1,17 @@
 """Congressional STOCK Act disclosure adapter.
 
-Source chain (tried in order, falling through on any error):
+Source chain (tried in order, falling through on missing key or any error):
 
-1. **Finnhub** — ``GET /api/v1/stock/congressional-trading?symbol={ticker}``
+1. **Lambda Finance** — ``GET https://www.lambdafin.com/api/congressional/trades?symbol={ticker}``
+   with the ``LAMBDA_FINANCE_API_KEY`` from config. Free tier covers House
+   + Senate with party + state attribution.
+2. **Finnhub** — ``GET /api/v1/stock/congressional-trading?symbol={ticker}``
    with the ``FINNHUB_API_KEY`` from config. Free tier covers House + Senate.
-2. **Senate Stock Watcher** — community-maintained S3 bucket of all
+3. **Senate Stock Watcher** — community-maintained S3 bucket of all
    parsed Senate PTRs. Free, no key, but Senate-only.
 
-Both return Markdown via the same formatter. On any failure (missing key,
-HTTP error, parse error, no rows), the function returns a bracketed
+All three return Markdown via the same formatter. On any failure (missing
+key, HTTP error, parse error, no rows), the function returns a bracketed
 fallback string starting with ``[`` so the calling agent can keep going.
 
 Caching uses :mod:`tradingagents.dataflows._cache`:
@@ -31,12 +34,16 @@ from tradingagents.dataflows.config import get_config
 logger = logging.getLogger(__name__)
 
 _SOURCE = "congress_trades"
+_LAMBDA_FINANCE_URL = "https://www.lambdafin.com/api/congressional/trades"
 _FINNHUB_URL = "https://finnhub.io/api/v1/stock/congressional-trading"
 _SENATE_SW_URL = (
     "https://senate-stock-watcher-data.s3-us-west-2.amazonaws.com/"
     "aggregate/all_transactions.json"
 )
 _TIMEOUT = 30
+# Page size for the Lambda Finance request. House + Senate combined rarely
+# exceeds a few dozen rows even over 180 days, so a single page suffices.
+_LAMBDA_PAGE_LIMIT = 200
 
 
 class _Trade(TypedDict, total=False):
@@ -70,6 +77,7 @@ def get_congress_trades(ticker: str, lookback_days: int = 180) -> str:
 
     config = get_config()
     cutoff = datetime.utcnow().date() - timedelta(days=lookback_days)
+    lambda_key = (config.get("lambda_finance_api_key") or "").strip()
     finnhub_key = (config.get("finnhub_api_key") or "").strip()
 
     sources_tried: List[str] = []
@@ -77,16 +85,28 @@ def get_congress_trades(ticker: str, lookback_days: int = 180) -> str:
     used_source: Optional[str] = None
     last_error: Optional[str] = None
 
-    if finnhub_key:
+    if lambda_key:
         try:
-            trades = _fetch_finnhub(ticker, finnhub_key, cutoff)
-            used_source = "Finnhub (House + Senate)"
+            trades = _fetch_lambda_finance(ticker, lambda_key, cutoff)
+            used_source = "Lambda Finance (House + Senate)"
         except Exception as e:
-            logger.warning("Finnhub congressional-trading failed for %s: %s", ticker, e)
-            last_error = f"finnhub: {e}"
-            sources_tried.append("finnhub")
+            logger.warning("Lambda Finance congressional-trading failed for %s: %s", ticker, e)
+            last_error = f"lambda_finance: {e}"
+            sources_tried.append("lambda_finance")
     else:
-        sources_tried.append("finnhub (no FINNHUB_API_KEY set)")
+        sources_tried.append("lambda_finance (no LAMBDA_FINANCE_API_KEY set)")
+
+    if not trades:
+        if finnhub_key:
+            try:
+                trades = _fetch_finnhub(ticker, finnhub_key, cutoff)
+                used_source = "Finnhub (House + Senate)"
+            except Exception as e:
+                logger.warning("Finnhub congressional-trading failed for %s: %s", ticker, e)
+                last_error = f"finnhub: {e}"
+                sources_tried.append("finnhub")
+        else:
+            sources_tried.append("finnhub (no FINNHUB_API_KEY set)")
 
     if not trades:
         try:
@@ -110,6 +130,130 @@ def get_congress_trades(ticker: str, lookback_days: int = 180) -> str:
     report = _format_report(ticker, trades, lookback_days, used_source or "unknown")
     cache_put(_SOURCE, cache_key, report)
     return report
+
+
+# --- Source: Lambda Finance -------------------------------------------------
+
+
+def _fetch_lambda_finance(ticker: str, api_key: str, cutoff_date) -> List[_Trade]:
+    """Fetch House + Senate STOCK Act disclosures from Lambda Finance.
+
+    Auth via ``X-API-Key`` header. Filters by ``symbol`` server-side and
+    by date client-side using the same ``cutoff_date`` semantics as the
+    other sources.
+    """
+    resp = requests.get(
+        _LAMBDA_FINANCE_URL,
+        params={"symbol": ticker.upper(), "limit": _LAMBDA_PAGE_LIMIT},
+        headers={"X-API-Key": api_key},
+        timeout=_TIMEOUT,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    rows = _extract_lambda_rows(body)
+    return [t for t in (_parse_lambda_row(r) for r in rows) if t is not None and _within_cutoff(t, cutoff_date)]
+
+
+def _extract_lambda_rows(body: Any) -> List[dict]:
+    """Pull the list of trade rows out of a Lambda Finance response.
+
+    Accepts the documented ``{"status": ..., "data": ...}`` envelope where
+    ``data`` is a list, ``data.trades`` is a list, or ``data.results`` is a
+    list. Falls back to a top-level list. Anything else returns ``[]``.
+    """
+    if isinstance(body, list):
+        return [r for r in body if isinstance(r, dict)]
+    if not isinstance(body, dict):
+        return []
+    data = body.get("data", body)
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)]
+    if isinstance(data, dict):
+        for key in ("trades", "results", "items"):
+            inner = data.get(key)
+            if isinstance(inner, list):
+                return [r for r in inner if isinstance(r, dict)]
+    return []
+
+
+def _parse_lambda_row(row: dict) -> Optional[_Trade]:
+    """Map a Lambda Finance row to the shared :class:`_Trade` shape.
+
+    Field names aren't fully documented; tolerate the common variants
+    (``transaction_date``/``traded``/``date``, ``name``/``representative``,
+    ``transaction_type``/``type``, range strings or paired ``amount_*``
+    fields). A row that doesn't yield a usable date or type is dropped
+    by ``_within_cutoff`` downstream.
+    """
+    try:
+        date = _normalise_ssw_date(
+            row.get("transactionDate")
+            or row.get("transaction_date")
+            or row.get("traded")
+            or row.get("tradeDate")
+            or row.get("date")
+            or ""
+        )
+        filer = (
+            row.get("representative")
+            or row.get("name")
+            or row.get("legislator")
+            or row.get("senator")
+            or "—"
+        ).strip()
+        # Lambda returns chamber lowercase ("senate"); other sources use
+        # Title case. Normalise so the report and tests stay consistent.
+        chamber_raw = (row.get("chamber") or row.get("office") or "—").strip()
+        chamber = chamber_raw.title() if chamber_raw and chamber_raw != "—" else "—"
+        party = _shorten_party(row.get("party") or "—")
+        state = (row.get("state") or row.get("state_district") or "—").strip() or "—"
+        ttype = _normalise_type(
+            row.get("transaction_type")
+            or row.get("type")
+            or row.get("transaction")
+            or ""
+        )
+        amount_min, amount_max = _lambda_amounts(row)
+        filing_date = _normalise_ssw_date(
+            row.get("disclosureDate")
+            or row.get("filing_date")
+            or row.get("disclosure_date")
+            or row.get("disclosed")
+            or ""
+        )
+        lag = _filing_lag(date, filing_date)
+        return _Trade(
+            date=date or "—",
+            filer=filer,
+            chamber=chamber,
+            party=party,
+            state=state,
+            type=ttype,
+            amount_min=amount_min,
+            amount_max=amount_max,
+            amount_label=_amount_label(amount_min, amount_max),
+            filing_date=filing_date or "—",
+            filing_lag_days=lag,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug("skipping malformed lambda finance row %r: %s", row, e)
+        return None
+
+
+def _lambda_amounts(row: dict) -> tuple[float, float]:
+    """Extract ``(min, max)`` USD bounds from whatever amount fields exist."""
+    lo = _safe_float(row.get("amount_min") or row.get("amount_from") or row.get("amountFrom"))
+    hi = _safe_float(row.get("amount_max") or row.get("amount_to") or row.get("amountTo"))
+    if lo is not None or hi is not None:
+        lo = lo or 0.0
+        hi = hi or lo or 0.0
+        return lo, hi
+    raw = row.get("amount") or row.get("amount_range") or ""
+    if isinstance(raw, (int, float)):
+        return float(raw), float(raw)
+    if isinstance(raw, str):
+        return _amount_range_to_floats(raw)
+    return 0.0, 0.0
 
 
 # --- Source: Finnhub --------------------------------------------------------
@@ -244,11 +388,15 @@ def _within_cutoff(trade: _Trade, cutoff_date) -> bool:
 
 def _normalise_type(raw: str) -> str:
     s = raw.strip().lower()
-    if "purchase" in s or s in ("buy", "p"):
+    # Lambda Finance uses single-letter codes with optional qualifiers like
+    # "S (Partial)" or "P (Full)". Extract the leading token so the equality
+    # checks below catch both bare letters and "<letter> (qualifier)" forms.
+    head = s.split()[0] if s else ""
+    if "purchase" in s or head in ("buy", "p"):
         return "Purchase"
-    if "sale" in s or "sell" in s or s == "s":
+    if "sale" in s or "sell" in s or head == "s":
         return "Sale"
-    if "exchange" in s:
+    if "exchange" in s or head == "e":
         return "Exchange"
     return raw.strip().title() or "—"
 

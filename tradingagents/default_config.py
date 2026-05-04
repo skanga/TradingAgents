@@ -85,6 +85,7 @@ DEFAULT_CONFIG = {
     "fred_api_key":    os.environ.get("FRED_API_KEY", ""),
     "sec_user_agent":  os.environ.get("SEC_USER_AGENT", "TradingAgents contact@example.com"),
     "finnhub_api_key": os.environ.get("FINNHUB_API_KEY", ""),
+    "lambda_finance_api_key": os.environ.get("LAMBDA_FINANCE_API_KEY", ""),
 
     # --- Feature flags for enhanced data sources ---
     # Each flag gates whether the framework auto-wires the corresponding

@@ -70,6 +70,125 @@ def test_amount_range_to_floats_handles_various_inputs():
     assert congress_trades._amount_range_to_floats("") == (0.0, 0.0)
 
 
+def test_parse_lambda_row_maps_canonical_shape():
+    row = {
+        "symbol": "AAPL",
+        "name": "Pelosi, Nancy",
+        "chamber": "House",
+        "party": "Democrat",
+        "state": "CA",
+        "transaction_date": "2026-04-15",
+        "transaction_type": "Purchase",
+        "amount_min": 1_000_001,
+        "amount_max": 5_000_000,
+        "filing_date": "2026-04-30",
+    }
+    t = congress_trades._parse_lambda_row(row)
+    assert t is not None
+    assert t["filer"] == "Pelosi, Nancy"
+    assert t["chamber"] == "House"
+    assert t["party"] == "D"
+    assert t["state"] == "CA"
+    assert t["type"] == "Purchase"
+    assert t["amount_min"] == 1_000_001
+    assert t["amount_max"] == 5_000_000
+    assert t["date"] == "2026-04-15"
+    assert t["filing_date"] == "2026-04-30"
+    assert t["filing_lag_days"] == 15
+
+
+def test_parse_lambda_row_accepts_camelcase_and_range_string():
+    """Tolerate camelCase fields and an ``amount`` range string in lieu of
+    paired ``amount_min``/``amount_max`` — the live response shape isn't
+    pinned in the public docs."""
+    row = {
+        "name": "Tuberville, Tommy",
+        "chamber": "Senate",
+        "party": "Republican",
+        "state": "AL",
+        "tradeDate": "04/15/2026",
+        "type": "sell",
+        "amount": "$15,001 - $50,000",
+        "disclosure_date": "05/02/2026",
+    }
+    t = congress_trades._parse_lambda_row(row)
+    assert t is not None
+    assert t["chamber"] == "Senate"
+    assert t["party"] == "R"
+    assert t["type"] == "Sale"
+    assert t["amount_min"] == 15_001
+    assert t["amount_max"] == 50_000
+    assert t["date"] == "2026-04-15"
+    assert t["filing_date"] == "2026-05-02"
+
+
+def test_parse_lambda_row_matches_live_api_shape():
+    """Field names + shape captured from a real
+    /api/congressional/trades response (AAPL, 2026-05). Older Senate rows
+    have null party/state and lowercase chamber — verify we normalise."""
+    row = {
+        "symbol": "AAPL",
+        "representative": "Thomas R Carper",
+        "transactionDate": "2020-11-20",
+        "disclosureDate": None,
+        "type": "Sale (Partial)",
+        "amount": "$50,001 - $100,000",
+        "owner": "Spouse",
+        "assetDescription": "Apple Inc.",
+        "party": None,
+        "state": None,
+        "district": None,
+        "chamber": "senate",
+        "ptrLink": "https://efdsearch.senate.gov/...",
+        "capGainsOver200": None,
+        "comment": "--",
+    }
+    t = congress_trades._parse_lambda_row(row)
+    assert t is not None
+    assert t["filer"] == "Thomas R Carper"
+    assert t["date"] == "2020-11-20"
+    assert t["chamber"] == "Senate"  # title-cased from lowercase "senate"
+    assert t["party"] == "—"          # null → placeholder
+    assert t["state"] == "—"
+    assert t["type"] == "Sale"        # "Sale (Partial)" normalises
+    assert t["amount_min"] == 50_001
+    assert t["amount_max"] == 100_000
+    assert t["filing_date"] == "—"    # null disclosureDate → placeholder
+    assert t["filing_lag_days"] is None
+
+
+def test_extract_lambda_rows_matches_live_envelope():
+    """Live envelope is ``{"trades": [...], "total": ..., "page": ..., "limit": ..., "hasMore": ...}``
+    — no top-level ``data`` wrapper."""
+    body = {
+        "trades": [{"symbol": "AAPL", "representative": "X"}],
+        "total": 436,
+        "page": 0,
+        "limit": 1,
+        "hasMore": True,
+    }
+    rows = congress_trades._extract_lambda_rows(body)
+    assert rows == [{"symbol": "AAPL", "representative": "X"}]
+
+
+def test_extract_lambda_rows_handles_envelope_variants():
+    rows = [{"symbol": "AAPL", "name": "X"}]
+    assert congress_trades._extract_lambda_rows({"status": "ok", "data": rows}) == rows
+    assert congress_trades._extract_lambda_rows({"data": {"trades": rows}}) == rows
+    assert congress_trades._extract_lambda_rows({"data": {"results": rows}}) == rows
+    assert congress_trades._extract_lambda_rows(rows) == rows
+    assert congress_trades._extract_lambda_rows({"status": "ok"}) == []
+    assert congress_trades._extract_lambda_rows("garbage") == []
+
+
+def test_lambda_amounts_falls_back_through_field_variants():
+    assert congress_trades._lambda_amounts({"amount_min": 1000, "amount_max": 5000}) == (1000, 5000)
+    assert congress_trades._lambda_amounts({"amountFrom": 1000, "amountTo": 5000}) == (1000, 5000)
+    assert congress_trades._lambda_amounts({"amount": "$1,001 - $15,000"}) == (1001, 15000)
+    assert congress_trades._lambda_amounts({"amount": 50_000}) == (50_000, 50_000)
+    assert congress_trades._lambda_amounts({}) == (0.0, 0.0)
+
+
 def test_normalise_type_canonicalises_variants():
     assert congress_trades._normalise_type("Purchase") == "Purchase"
     assert congress_trades._normalise_type("buy") == "Purchase"
@@ -77,6 +196,12 @@ def test_normalise_type_canonicalises_variants():
     assert congress_trades._normalise_type("sell") == "Sale"
     assert congress_trades._normalise_type("exchange") == "Exchange"
     assert congress_trades._normalise_type("") == "—"
+    # Lambda Finance abbreviated codes with qualifiers
+    assert congress_trades._normalise_type("S (Partial)") == "Sale"
+    assert congress_trades._normalise_type("P (Full)") == "Purchase"
+    assert congress_trades._normalise_type("E (Partial)") == "Exchange"
+    assert congress_trades._normalise_type("S") == "Sale"
+    assert congress_trades._normalise_type("P") == "Purchase"
 
 
 def test_within_cutoff_excludes_old_trades():
@@ -123,7 +248,11 @@ def test_format_report_emits_sentiment_and_table():
 
 
 def test_get_congress_trades_falls_through_to_senate_when_no_finnhub_key(monkeypatch, tmp_path):
-    set_config({"data_cache_dir": str(tmp_path), "finnhub_api_key": ""})
+    set_config({
+        "data_cache_dir": str(tmp_path),
+        "finnhub_api_key": "",
+        "lambda_finance_api_key": "",
+    })
     captured = {}
 
     def fake_ssw(ticker, cutoff):
@@ -145,7 +274,11 @@ def test_get_congress_trades_falls_through_to_senate_when_no_finnhub_key(monkeyp
 
 
 def test_get_congress_trades_falls_through_when_finnhub_raises(monkeypatch, tmp_path):
-    set_config({"data_cache_dir": str(tmp_path), "finnhub_api_key": "test-key"})
+    set_config({
+        "data_cache_dir": str(tmp_path),
+        "finnhub_api_key": "test-key",
+        "lambda_finance_api_key": "",
+    })
     monkeypatch.setattr(
         congress_trades, "_fetch_finnhub",
         lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("boom")),
@@ -161,7 +294,11 @@ def test_get_congress_trades_falls_through_when_finnhub_raises(monkeypatch, tmp_
 
 
 def test_get_congress_trades_returns_finnhub_data_when_key_present(monkeypatch, tmp_path):
-    set_config({"data_cache_dir": str(tmp_path), "finnhub_api_key": "test-key"})
+    set_config({
+        "data_cache_dir": str(tmp_path),
+        "finnhub_api_key": "test-key",
+        "lambda_finance_api_key": "",
+    })
     expected = [
         congress_trades._Trade(
             date=(date.today() - timedelta(days=2)).isoformat(),
@@ -181,14 +318,103 @@ def test_get_congress_trades_returns_finnhub_data_when_key_present(monkeypatch, 
     assert "Pelosi, Nancy" in out
 
 
+def test_lambda_finance_is_tried_before_finnhub_when_key_present(monkeypatch, tmp_path):
+    """Lambda is the new primary — Finnhub must not be touched if Lambda
+    returns rows."""
+    set_config({
+        "data_cache_dir": str(tmp_path),
+        "finnhub_api_key": "test-key",
+        "lambda_finance_api_key": "test-lambda-key",
+    })
+    expected = [
+        congress_trades._Trade(
+            date=(date.today() - timedelta(days=2)).isoformat(),
+            filer="Pelosi, Nancy", chamber="House", party="D", state="CA",
+            type="Purchase", amount_min=1_000_001, amount_max=5_000_000,
+            amount_label="$1.0M – $5.0M", filing_date="—", filing_lag_days=None,
+        )
+    ]
+    monkeypatch.setattr(congress_trades, "_fetch_lambda_finance", lambda *a, **kw: expected)
+    monkeypatch.setattr(
+        congress_trades, "_fetch_finnhub",
+        lambda *a, **kw: pytest.fail("Finnhub must not be called when Lambda returns data"),
+    )
+    monkeypatch.setattr(
+        congress_trades, "_fetch_senate_stock_watcher",
+        lambda *a, **kw: pytest.fail("SSW must not be called when Lambda returns data"),
+    )
+    out = congress_trades.get_congress_trades("AAPL", lookback_days=30)
+    assert "Lambda Finance (House + Senate)" in out
+    assert "Pelosi, Nancy" in out
+
+
+def test_falls_through_to_finnhub_when_lambda_returns_empty(monkeypatch, tmp_path):
+    set_config({
+        "data_cache_dir": str(tmp_path),
+        "finnhub_api_key": "test-key",
+        "lambda_finance_api_key": "test-lambda-key",
+    })
+    finnhub_rows = [
+        congress_trades._Trade(
+            date=(date.today() - timedelta(days=2)).isoformat(),
+            filer="Pelosi, Nancy", chamber="House", party="—", state="—",
+            type="Purchase", amount_min=1_000_001, amount_max=5_000_000,
+            amount_label="$1.0M – $5.0M", filing_date="—", filing_lag_days=None,
+        )
+    ]
+    monkeypatch.setattr(congress_trades, "_fetch_lambda_finance", lambda *a, **kw: [])
+    monkeypatch.setattr(congress_trades, "_fetch_finnhub", lambda *a, **kw: finnhub_rows)
+    monkeypatch.setattr(
+        congress_trades, "_fetch_senate_stock_watcher",
+        lambda *a, **kw: pytest.fail("SSW must not be called when Finnhub returns data"),
+    )
+    out = congress_trades.get_congress_trades("AAPL", lookback_days=30)
+    assert "Finnhub (House + Senate)" in out
+    assert "Pelosi, Nancy" in out
+
+
+def test_falls_through_when_lambda_raises(monkeypatch, tmp_path):
+    """A Lambda HTTP failure must not abort the agent — chain continues."""
+    set_config({
+        "data_cache_dir": str(tmp_path),
+        "finnhub_api_key": "",
+        "lambda_finance_api_key": "test-lambda-key",
+    })
+    monkeypatch.setattr(
+        congress_trades, "_fetch_lambda_finance",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("lambda 502")),
+    )
+    monkeypatch.setattr(congress_trades, "_fetch_senate_stock_watcher", lambda *a, **kw: [])
+    out = congress_trades.get_congress_trades("XYZ", lookback_days=30)
+    assert out.startswith("[Congressional disclosures unavailable")
+    assert "lambda 502" in out
+
+
 # --- Integration -----------------------------------------------------------
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not os.environ.get("FINNHUB_API_KEY"), reason="FINNHUB_API_KEY unset")
 def test_get_congress_trades_live_finnhub_aapl(tmp_path):
-    set_config({"data_cache_dir": str(tmp_path), "finnhub_api_key": os.environ["FINNHUB_API_KEY"]})
+    set_config({
+        "data_cache_dir": str(tmp_path),
+        "finnhub_api_key": os.environ["FINNHUB_API_KEY"],
+        "lambda_finance_api_key": "",
+    })
     out = congress_trades.get_congress_trades("AAPL", lookback_days=180)
     assert isinstance(out, str) and out
     # Either real data or graceful no-data — never an unhandled crash
+    assert out.startswith("##") or out.startswith("[Congressional disclosures unavailable")
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not os.environ.get("LAMBDA_FINANCE_API_KEY"), reason="LAMBDA_FINANCE_API_KEY unset")
+def test_get_congress_trades_live_lambda_finance_aapl(tmp_path):
+    set_config({
+        "data_cache_dir": str(tmp_path),
+        "finnhub_api_key": "",
+        "lambda_finance_api_key": os.environ["LAMBDA_FINANCE_API_KEY"],
+    })
+    out = congress_trades.get_congress_trades("AAPL", lookback_days=180)
+    assert isinstance(out, str) and out
     assert out.startswith("##") or out.startswith("[Congressional disclosures unavailable")

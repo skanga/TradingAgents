@@ -27,6 +27,10 @@ from .alpha_vantage_common import AlphaVantageRateLimitError
 # Enhanced data adapters (scaffolded; see each module for implementation status)
 from .sec_insider import get_insider_transactions as get_sec_insider_transactions
 from .congress_trades import get_congress_trades as get_finnhub_congress_trades
+from .lambda_finance_sec import (
+    get_income_statement as get_lambda_finance_income_statement,
+    get_balance_sheet as get_lambda_finance_balance_sheet,
+)
 from .options_flow import (
     get_options_summary as get_yfinance_options_summary,
     get_iv_rank as get_yfinance_iv_rank,
@@ -115,6 +119,7 @@ VENDOR_LIST = [
     "finnhub",
     "fred",
     "motley_fool",
+    "lambda_finance",
 ]
 
 # Mapping of methods to their vendor-specific implementations
@@ -137,6 +142,7 @@ VENDOR_METHODS = {
     "get_balance_sheet": {
         "alpha_vantage": get_alpha_vantage_balance_sheet,
         "yfinance": get_yfinance_balance_sheet,
+        "lambda_finance": get_lambda_finance_balance_sheet,
     },
     "get_cashflow": {
         "alpha_vantage": get_alpha_vantage_cashflow,
@@ -145,6 +151,7 @@ VENDOR_METHODS = {
     "get_income_statement": {
         "alpha_vantage": get_alpha_vantage_income_statement,
         "yfinance": get_yfinance_income_statement,
+        "lambda_finance": get_lambda_finance_income_statement,
     },
     # news_data
     "get_news": {
