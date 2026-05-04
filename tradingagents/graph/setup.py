@@ -1,6 +1,8 @@
 # TradingAgents/graph/setup.py
 
-from typing import Any, Dict
+import logging
+import time
+from typing import Any, Callable, Dict
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -8,6 +10,48 @@ from tradingagents.agents import *
 from tradingagents.agents.utils.agent_states import AgentState
 
 from .conditional_logic import ConditionalLogic
+
+logger = logging.getLogger(__name__)
+
+
+def _with_checkpoint(name: str, node_fn: Callable) -> Callable:
+    """Wrap a graph node to emit ENTER/EXIT checkpoint log lines.
+
+    Default httpx INFO output drowns the run log in HTTP-request traces with
+    no visible boundaries between agents. Wrapping each node here surfaces
+    a single ``ENTER <name> | <ticker>`` line on entry and an
+    ``EXIT  <name> | <ticker> | <elapsed>s`` line on exit, giving a grep-
+    able outline of pipeline progress without per-agent code edits.
+
+    Tool nodes and Msg-Clear nodes are wrapped too — every entry into an
+    analyst's node typically follows a tool-node round-trip, so those
+    checkpoints make tool-calling activity visible as well.
+    """
+
+    def wrapped(state, *args, **kwargs):
+        ticker = "?"
+        if isinstance(state, dict):
+            ticker = state.get("company_of_interest") or "?"
+        logger.info("ENTER %s | %s", name, ticker)
+        t0 = time.monotonic()
+        try:
+            result = node_fn(state, *args, **kwargs)
+        except Exception as e:
+            logger.error(
+                "FAIL  %s | %s | %.1fs | %s: %s",
+                name,
+                ticker,
+                time.monotonic() - t0,
+                type(e).__name__,
+                e,
+            )
+            raise
+        logger.info(
+            "EXIT  %s | %s | %.1fs", name, ticker, time.monotonic() - t0
+        )
+        return result
+
+    return wrapped
 
 
 class GraphSetup:
@@ -107,23 +151,45 @@ class GraphSetup:
         # Create workflow
         workflow = StateGraph(AgentState)
 
-        # Add analyst nodes to the graph
+        # Add analyst nodes to the graph. Every node is wrapped with
+        # _with_checkpoint so the run log carries grep-able ENTER/EXIT
+        # boundaries between agents — see helper docstring at module top.
         for analyst_type, node in analyst_nodes.items():
-            workflow.add_node(f"{analyst_type.capitalize()} Analyst", node)
+            analyst_name = f"{analyst_type.capitalize()} Analyst"
+            clear_name = f"Msg Clear {analyst_type.capitalize()}"
+            tools_name = f"tools_{analyst_type}"
+            workflow.add_node(analyst_name, _with_checkpoint(analyst_name, node))
             workflow.add_node(
-                f"Msg Clear {analyst_type.capitalize()}", delete_nodes[analyst_type]
+                clear_name, _with_checkpoint(clear_name, delete_nodes[analyst_type])
             )
-            workflow.add_node(f"tools_{analyst_type}", tool_nodes[analyst_type])
+            workflow.add_node(
+                tools_name, _with_checkpoint(tools_name, tool_nodes[analyst_type])
+            )
 
         # Add other nodes
-        workflow.add_node("Bull Researcher", bull_researcher_node)
-        workflow.add_node("Bear Researcher", bear_researcher_node)
-        workflow.add_node("Research Manager", research_manager_node)
-        workflow.add_node("Trader", trader_node)
-        workflow.add_node("Aggressive Analyst", aggressive_analyst)
-        workflow.add_node("Neutral Analyst", neutral_analyst)
-        workflow.add_node("Conservative Analyst", conservative_analyst)
-        workflow.add_node("Portfolio Manager", portfolio_manager_node)
+        workflow.add_node(
+            "Bull Researcher", _with_checkpoint("Bull Researcher", bull_researcher_node)
+        )
+        workflow.add_node(
+            "Bear Researcher", _with_checkpoint("Bear Researcher", bear_researcher_node)
+        )
+        workflow.add_node(
+            "Research Manager", _with_checkpoint("Research Manager", research_manager_node)
+        )
+        workflow.add_node("Trader", _with_checkpoint("Trader", trader_node))
+        workflow.add_node(
+            "Aggressive Analyst", _with_checkpoint("Aggressive Analyst", aggressive_analyst)
+        )
+        workflow.add_node(
+            "Neutral Analyst", _with_checkpoint("Neutral Analyst", neutral_analyst)
+        )
+        workflow.add_node(
+            "Conservative Analyst",
+            _with_checkpoint("Conservative Analyst", conservative_analyst),
+        )
+        workflow.add_node(
+            "Portfolio Manager", _with_checkpoint("Portfolio Manager", portfolio_manager_node)
+        )
 
         # Define edges
         # Start with the first analyst
