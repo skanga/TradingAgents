@@ -1,0 +1,201 @@
+"""Tests for the analyst-output quality guard."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from tradingagents.agents.utils.quality_guard import (
+    invoke_chain_with_quality_retry,
+    is_degenerate_report,
+    make_unavailable_report,
+)
+
+
+def _ai(content: str, *, tool_calls=None) -> MagicMock:
+    """Mock AIMessage-shaped object: `.content`, `.tool_calls` attributes."""
+    m = MagicMock()
+    m.content = content
+    m.tool_calls = tool_calls or []
+    return m
+
+
+def _chain(*results):
+    """Mock chain whose ``invoke`` returns the given AIMessage-shaped mocks
+    in order, one per call."""
+    chain = MagicMock()
+    chain.invoke = MagicMock(side_effect=list(results))
+    return chain
+
+
+# --- is_degenerate_report --------------------------------------------------
+
+
+def test_empty_or_whitespace_is_degenerate():
+    assert is_degenerate_report("") is True
+    assert is_degenerate_report("   \n\n  ") is True
+
+
+def test_non_string_is_degenerate():
+    assert is_degenerate_report(None) is True
+    assert is_degenerate_report(42) is True
+    assert is_degenerate_report({"foo": "bar"}) is True
+
+
+def test_two_word_response_is_degenerate():
+    """The motivating regression: an LLM that returned 'Call correct.'
+    instead of a real Fundamentals report."""
+    assert is_degenerate_report("Call correct.") is True
+
+
+def test_short_unstructured_text_is_degenerate():
+    assert is_degenerate_report("Looks fine.") is True
+    assert is_degenerate_report("HOLD") is True
+
+
+def test_short_but_structured_passes():
+    """A short bullet list still has form — the LLM made a structural
+    choice. Don't flag it."""
+    bullet = "- Bullet one\n- Bullet two\n- Bullet three"
+    assert is_degenerate_report(bullet) is False
+
+
+def test_short_table_passes():
+    table = "| A | B |\n|---|---|\n| 1 | 2 |"
+    assert is_degenerate_report(table) is False
+
+
+def test_short_heading_passes():
+    """A heading-only response is still structured. Above-threshold body
+    isn't required when structure is present."""
+    assert is_degenerate_report("# Title\n\nA brief note.") is False
+
+
+def test_long_unstructured_paragraph_passes():
+    """If the LLM produced a substantive free-form paragraph, accept it
+    even without explicit markdown structure."""
+    long_text = "x " * 200  # 400 chars
+    assert is_degenerate_report(long_text) is False
+
+
+def test_threshold_boundary():
+    """Under threshold + no structure → degenerate; at threshold → not."""
+    # 199 chars, no structure
+    assert is_degenerate_report("a" * 199) is True
+    # 200 chars, no structure
+    assert is_degenerate_report("a" * 200) is False
+
+
+# --- make_unavailable_report ----------------------------------------------
+
+
+def test_unavailable_report_includes_label_and_marker():
+    out = make_unavailable_report(
+        analyst_label="Fundamentals Analyst", original="Call correct."
+    )
+    assert "## Fundamentals Analyst — output unavailable" in out
+    assert "Call correct." in out
+    assert "missing" in out  # explicit signal for downstream debaters
+
+
+def test_unavailable_report_handles_empty_original():
+    out = make_unavailable_report(analyst_label="News Analyst", original="")
+    assert "## News Analyst — output unavailable" in out
+    assert "_(empty)_" in out
+
+
+def test_unavailable_report_truncates_long_original():
+    """A model that returned 5000 chars of garbage shouldn't cause us to
+    embed all of it in the placeholder."""
+    out = make_unavailable_report(
+        analyst_label="X", original="garbage " * 1000
+    )
+    # Truncated form ends with the ellipsis the helper appends
+    assert "…" in out
+    assert len(out) < 800
+
+
+@pytest.mark.parametrize("original", ["", "a", "x" * 50, "x" * 1000])
+def test_unavailable_report_is_itself_not_degenerate(original):
+    """The placeholder must pass the same quality guard so it doesn't
+    look like another degenerate response to anyone reading it."""
+    out = make_unavailable_report(analyst_label="X Analyst", original=original)
+    assert not is_degenerate_report(out)
+
+
+# --- invoke_chain_with_quality_retry --------------------------------------
+
+
+def test_invoke_returns_first_response_when_not_degenerate():
+    good = _ai("# Heading\n\n" + "real content. " * 20)
+    chain = _chain(good)
+    msg, report = invoke_chain_with_quality_retry(
+        chain, ["seed"], analyst_label="Fundamentals Analyst"
+    )
+    assert msg is good
+    assert "real content" in report
+    chain.invoke.assert_called_once()
+
+
+def test_invoke_passes_through_tool_calls_without_retry():
+    """A response that requests tool calls is mid-conversation, not a final
+    answer. Don't retry, don't substitute — return verbatim with empty
+    report so the LangGraph supervisor routes to ToolNode."""
+    needs_tool = _ai("", tool_calls=[{"name": "get_fundamentals"}])
+    chain = _chain(needs_tool)
+    msg, report = invoke_chain_with_quality_retry(
+        chain, ["seed"], analyst_label="Fundamentals Analyst"
+    )
+    assert msg is needs_tool
+    assert report == ""
+    chain.invoke.assert_called_once()
+
+
+def test_invoke_retries_when_first_response_is_degenerate():
+    """The motivating bug: first response is 'Call correct.', retry
+    yields a real report — keep the retry."""
+    bad = _ai("Call correct.")
+    good = _ai("# Real Report\n\n" + "details. " * 30)
+    chain = _chain(bad, good)
+    msg, report = invoke_chain_with_quality_retry(
+        chain, ["seed"], analyst_label="Fundamentals Analyst"
+    )
+    assert msg is good
+    assert "Real Report" in report
+    assert chain.invoke.call_count == 2
+
+    # The retry call gets the original messages plus a stricter user prompt
+    second_call_args = chain.invoke.call_args_list[1].args[0]
+    assert second_call_args[:1] == ["seed"]
+    assert second_call_args[-1][0] == "user"
+    assert "previous response" in second_call_args[-1][1].lower()
+
+
+def test_invoke_substitutes_placeholder_when_retry_also_degenerate():
+    bad1 = _ai("Call correct.")
+    bad2 = _ai("nope.")
+    chain = _chain(bad1, bad2)
+    msg, report = invoke_chain_with_quality_retry(
+        chain, ["seed"], analyst_label="Fundamentals Analyst"
+    )
+    # Original message kept (so message history reflects what happened)
+    assert msg is bad1
+    # Report is the unavailable placeholder, citing the original output
+    assert "Fundamentals Analyst — output unavailable" in report
+    assert "Call correct." in report
+    assert chain.invoke.call_count == 2
+
+
+def test_invoke_substitutes_placeholder_when_retry_returns_tool_calls():
+    """If the retry tries to call more tools instead of producing a
+    report, that's still a failed retry — substitute the placeholder."""
+    bad = _ai("HOLD")
+    retry_with_tool = _ai("", tool_calls=[{"name": "get_news"}])
+    chain = _chain(bad, retry_with_tool)
+    msg, report = invoke_chain_with_quality_retry(
+        chain, ["seed"], analyst_label="News Analyst"
+    )
+    assert msg is bad
+    assert "News Analyst — output unavailable" in report
+    assert chain.invoke.call_count == 2

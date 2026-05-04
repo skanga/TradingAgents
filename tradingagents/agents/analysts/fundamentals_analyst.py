@@ -10,6 +10,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_insider_transactions,
     get_language_instruction,
 )
+from tradingagents.agents.utils.quality_guard import invoke_chain_with_quality_retry
 from tradingagents.dataflows.config import get_config
 
 
@@ -35,6 +36,9 @@ def create_fundamentals_analyst(llm):
             + " When interpreting insider activity, treat **cluster insider buying** (multiple distinct C-suite filers purchasing within the same window, especially any single purchase ≥ $500k) as a strong bullish conviction signal — executives are putting personal capital at risk. Treat **cluster insider selling** with more nuance: routine 10b5-1 plan sales are noise, but a sudden cluster of large discretionary sales is a notable risk flag worth surfacing. Always cite the specific filers, dollar amounts, and dates from the tool's report rather than speaking in generalities."
             + " Also call `get_congress_trades` for STOCK Act disclosures from members of Congress. Treat congressional purchases — especially clusters of buyers across both chambers — as a noteworthy informational signal: legislators sit on committees with policy oversight that can move sectors. Surface filers who chair or sit on committees relevant to the company's business (e.g. Armed Services for defense, Energy & Commerce for healthcare/telecom, Financial Services for banks). Disclosed amounts are ranges, so quote the range; do not invent point estimates."
             + " Call `get_earnings_transcript_sentiment` to read the qualitative tone of management's most recent earnings call. The numeric financial statements tell you WHAT the company reported; the transcript sentiment tells you HOW management is positioning what's coming next. Pay particular attention to: (a) divergence between Prepared Remarks and Q&A — a positive scripted message paired with a guarded Q&A is a yellow flag; (b) elevated hedge-word density (≥ 8 per 1k words is meaningful); (c) elevated Q&A deflection rate (≥ 4 per 1k words means management is dodging specifics). Do NOT downgrade a strong fundamental picture purely on hedging language — but DO surface the divergence so the trader can weigh it."
+            + " REQUIRED OUTPUT STRUCTURE — your final report MUST include all of the following, even if some sections are short:"
+            " (1) at least one section heading; (2) numeric values pulled from the tool outputs (revenue, margins, FCF, EPS — cite the tool that supplied each figure, e.g. 'Per get_income_statement: revenue $X.XB FY2025'); (3) a closing markdown summary table with the key bull/bear factors. If a tool returned a bracketed-failure string (e.g. '[fundamental data unavailable: ...]'), explicitly state that source was unavailable and continue with what you have — never fall silent or emit a one-line response."
+            " Source citations are mandatory: every numeric claim must reference the tool that produced it; do not invent figures that no tool returned."
             + get_language_instruction(),
         )
 
@@ -62,15 +66,17 @@ def create_fundamentals_analyst(llm):
 
         chain = prompt | llm.bind_tools(tools)
 
-        result = chain.invoke(state["messages"])
-
-        report = ""
-
-        if len(result.tool_calls) == 0:
-            report = result.content
+        # Retry once on degenerate LLM output (the motivating case: a free-tier
+        # model that returned literally "Call correct." instead of a real
+        # Fundamentals report). If retry also fails, the helper substitutes an
+        # honest "unavailable" placeholder so downstream debaters see coherent
+        # signal instead of garbage.
+        final_message, report = invoke_chain_with_quality_retry(
+            chain, state["messages"], analyst_label="Fundamentals Analyst"
+        )
 
         return {
-            "messages": [result],
+            "messages": [final_message],
             "fundamentals_report": report,
         }
 

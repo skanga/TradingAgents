@@ -88,6 +88,7 @@ def render_markdown_report(
         sections.append(("Trader Proposal", trader_text))
 
     risk = state.get("risk_debate_state") or {}
+    risk_verdict = ""
     if isinstance(risk, dict):
         for key, label in (
             ("aggressive_history", "Aggressive Risk Analyst"),
@@ -98,15 +99,17 @@ def render_markdown_report(
             if text:
                 sections.append((label, text))
         risk_verdict = _safe_str(risk.get("judge_decision"))
-        if risk_verdict:
-            sections.append(("Portfolio Manager Verdict (risk debate)", risk_verdict))
 
-    if final_decision_text:
-        sections.append(("Final Trade Decision", final_decision_text))
+    # Final decision: prefer ``final_trade_decision`` (the canonical, structured
+    # output); fall back to the raw risk-debate verdict only if the canonical
+    # field is empty. Emitting both produces near-identical duplicate sections.
+    decision_text = final_decision_text or risk_verdict
+    if decision_text:
+        sections.append(("Final Trade Decision", decision_text))
 
     for title, content in sections:
         parts.append(f"## {title}\n")
-        parts.append(content.strip())
+        parts.append(_normalize_headings(content.strip(), min_level=3))
         parts.append("")
 
     parts.append("---")
@@ -125,6 +128,60 @@ def _safe_str(value: Any) -> str:
     if isinstance(value, str):
         return value.strip()
     return str(value).strip()
+
+
+_HEADING_RE = re.compile(r"^(#{1,6})(\s)")
+_FENCE_RE = re.compile(r"^```")
+
+
+def _normalize_headings(body: str, *, min_level: int = 3) -> str:
+    """Shift markdown headings so the smallest level in ``body`` becomes ``min_level``.
+
+    Each section body is wrapped by the renderer in ``## <Section Name>``.
+    Some agents emit their own report starting at ``#`` or ``##``, which
+    breaks the document hierarchy and confuses TOC generators that read
+    heading levels literally. This helper finds the smallest heading level
+    used in the body and shifts every heading down so that smallest level
+    becomes ``min_level`` (default ``###``, one below the section wrapper).
+
+    Lines inside fenced code blocks are skipped so Python comments / shell
+    prompts that happen to start with ``#`` aren't mistaken for headings.
+    """
+    lines = body.split("\n")
+    in_fence = False
+    levels: list[int] = []
+    for line in lines:
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = _HEADING_RE.match(line)
+        if m:
+            levels.append(len(m.group(1)))
+    if not levels:
+        return body
+    shift = min_level - min(levels)
+    if shift <= 0:
+        return body  # Already nested at or below the target level.
+
+    out: list[str] = []
+    in_fence = False
+    for line in lines:
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        if in_fence:
+            out.append(line)
+            continue
+        m = _HEADING_RE.match(line)
+        if m:
+            new_level = min(6, len(m.group(1)) + shift)
+            out.append("#" * new_level + line[len(m.group(1)):])
+        else:
+            out.append(line)
+    return "\n".join(out)
 
 
 def _excerpt(text: str, max_chars: int) -> str:

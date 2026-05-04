@@ -7,6 +7,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_macro_environment,
     get_news,
 )
+from tradingagents.agents.utils.quality_guard import invoke_chain_with_quality_retry
 from tradingagents.dataflows.config import get_config
 
 
@@ -27,6 +28,11 @@ def create_news_analyst(llm):
             + " Also call `get_congress_trades` to surface recent STOCK Act disclosures from members of Congress. Congressional purchases can reflect policy-level information that intersects with your macro mandate (committee oversight, upcoming regulation, contract awards). Flag any cluster of legislator buys or sells, and note when filers serve on committees with jurisdiction over the company's sector."
             + " Always call `get_macro_environment` once per analysis to anchor your write-up in the current rates / yield-curve / credit-spread / USD regime. Lead with the FAVORABLE/NEUTRAL/UNFAVORABLE backdrop classification it returns, then connect the individual signals (e.g. curve inversion, HY spread widening, dollar strengthening) to specific company-level implications when relevant — multinationals are USD-sensitive, financials are curve-sensitive, leveraged credits are HY-spread sensitive, and so on. Do not contradict the tool's data; if you disagree with its classification, say so explicitly with reasoning."
             + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
+            + " REQUIRED OUTPUT STRUCTURE — your final report MUST include all of the following: (1) at least one section heading;"
+            " (2) the macro backdrop classification (FAVORABLE/NEUTRAL/UNFAVORABLE) from get_macro_environment, surfaced near the top;"
+            " (3) at least 3 specific events or stories with concrete dates pulled from the news tools (cite which tool produced each — e.g. 'Per get_news: ...');"
+            " (4) the closing markdown summary table. If a news tool returned a bracketed-failure string ('[News unavailable: ...]'), state that explicitly and continue with what you have — never fall silent or emit a one-line response."
+            " Source citations are mandatory: every event you cite must reference the tool that produced it; do not invent stories that no tool returned."
             + get_language_instruction()
         )
 
@@ -53,15 +59,15 @@ def create_news_analyst(llm):
         prompt = prompt.partial(instrument_context=instrument_context)
 
         chain = prompt | llm.bind_tools(tools)
-        result = chain.invoke(state["messages"])
 
-        report = ""
-
-        if len(result.tool_calls) == 0:
-            report = result.content
+        # Retry once on degenerate LLM output; substitute an "unavailable"
+        # placeholder if the retry also fails. See quality_guard for details.
+        final_message, report = invoke_chain_with_quality_retry(
+            chain, state["messages"], analyst_label="News Analyst"
+        )
 
         return {
-            "messages": [result],
+            "messages": [final_message],
             "news_report": report,
         }
 

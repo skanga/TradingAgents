@@ -19,7 +19,14 @@ Key points to focus on:
 - Competitive Advantages: Emphasize factors like unique products, strong branding, or dominant market positioning.
 - Positive Indicators: Use financial health, industry trends, and recent positive news as evidence.
 - Bear Counterpoints: Critically analyze the bear argument with specific data and sound reasoning, addressing concerns thoroughly and showing why the bull perspective holds stronger merit.
-- Engagement: Present your argument in a conversational style, engaging directly with the bear analyst's points and debating effectively rather than just listing data.
+- Engagement: Engage substantively with the bear analyst's specific points — quote them, then refute with data. Do not just list bullet points in isolation.
+
+REGISTER AND TONE — non-negotiable:
+- Write in a professional sell-side / equity-research register. Match the tone of a Goldman Sachs or Morgan Stanley research note.
+- Do NOT open with greetings ("Hey Bear-Buster!", "Hi everyone", "Listen up"), nicknames, or banter directed at the bear.
+- Do NOT use emoji, hype phrasing ("the smart idea", "free-fall run"), or sales language.
+- Use "###" or "####" for any sub-headings (the renderer wraps your section in "## Bull Researcher" — start your headings at level 3 or below).
+- Cite specific numbers from the resources below; do not invent data.
 
 Resources available:
 Market research report: {market_research_report}
@@ -28,7 +35,7 @@ Latest world affairs news: {news_report}
 Company fundamentals report: {fundamentals_report}
 Conversation history of the debate: {history}
 Last bear argument: {current_response}
-Use this information to deliver a compelling bull argument, refute the bear's concerns, and engage in a dynamic debate that demonstrates the strengths of the bull position.
+Use this information to deliver a compelling, professionally written bull argument that refutes the bear's specific concerns and demonstrates the strengths of the bull position.
 """
 
         response = llm.invoke(prompt)
