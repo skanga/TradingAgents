@@ -96,7 +96,9 @@ Internal debate agents always run in English (for reasoning quality). User-facin
 | `quant` | `quant_llm` | market, options, all 3 risk debaters |
 | `light` | `light_llm` | social, news |
 
-Empty role-config strings fall back: `structured_output → deep`, `quant → quick`, `light → quick`. The map is memoised by model string so two roles pointing at the same model share a single client.
+Empty role-config strings fall back: `structured_output → deep`, `quant → quick`, `light → quick`. The map is memoised by `(model, fallback_tuple)` so two roles pointing at the same model+fallback chain share a single client.
+
+Each role also accepts an optional `*_llm_fallbacks` list (e.g. `quick_think_llm_fallbacks: [...]`). When non-empty, `_build_chat_with_fallbacks` wraps the primary in a `FallbackChatModel` (see `tradingagents/llm_clients/fallback.py`) that retries against each fallback on recoverable upstream errors — `429`, `5xx`, request timeout, transport drop. Auth/schema/other-4xx errors are *not* caught (they would fail again on the next model and mask the real bug). Entries are plain strings (use the run's `llm_provider`), `(provider, model)` tuples, or `{"provider": ..., "model": ...}` dicts for cross-provider fallback.
 
 ### Data flow (`tradingagents/dataflows/`)
 

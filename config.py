@@ -35,9 +35,6 @@ def _build_tradingagents_config() -> dict:
     cfg["backend_url"] = "https://openrouter.ai/api/v1"
     cfg["deep_think_llm"] = "nvidia/nemotron-3-super-120b-a12b:free"
     cfg["quick_think_llm"] = "openai/gpt-oss-20b:free"
-    # Per-role model keys established in the fork. Currently reserved
-    # config keys — agent factories will start consuming them in a
-    # follow-up; setting them here is a no-op until then.
     cfg["structured_output_llm"] = "openai/gpt-oss-120b:free"
     # quant_llm normally routes Market/Options/Risk to a quant-leaning model.
     # qwen/qwen3-next-80b-a3b-instruct:free is served upstream by Venice,
@@ -49,6 +46,24 @@ def _build_tradingagents_config() -> dict:
     # in seconds. Empty falls back to quick_think_llm (gpt-oss-20b:free,
     # different upstream, no observed cap at our volume).
     cfg["light_llm"] = ""
+
+    # Per-role fallback chains. Each free model below routes through a
+    # different upstream provider (OpenInference, DeepInfra, Together, etc.)
+    # so a 429 on the primary's upstream doesn't drag down the rest of the
+    # run — FallbackChatModel walks the chain on recoverable errors. Order
+    # is "best-quality first, broadest-quota last".
+    cfg["deep_think_llm_fallbacks"] = [
+        "deepseek/deepseek-chat-v3.1:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+    ]
+    cfg["quick_think_llm_fallbacks"] = [
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "google/gemini-2.0-flash-exp:free",
+    ]
+    cfg["structured_output_llm_fallbacks"] = [
+        "deepseek/deepseek-chat-v3.1:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+    ]
     return cfg
 
 

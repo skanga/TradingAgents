@@ -11,9 +11,24 @@ import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
+
+def _hashable(value: Any) -> Any:
+    """Coerce nested lists/dicts to a hashable shape for use as dict keys.
+
+    Fallback config entries can be plain strings, ``(provider, model)``
+    tuples, or ``{"provider": ..., "model": ...}`` dicts. The role-LLM
+    cache keys these tuples so identical chains reuse one client; this
+    helper normalises the shape so dicts (mutable, unhashable) still work.
+    """
+    if isinstance(value, dict):
+        return tuple(sorted((k, _hashable(v)) for k, v in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_hashable(v) for v in value)
+    return value
+
 from langgraph.prebuilt import ToolNode
 
-from tradingagents.llm_clients import create_llm_client
+from tradingagents.llm_clients import FallbackChatModel, create_llm_client
 
 from tradingagents.agents import *
 from tradingagents.default_config import DEFAULT_CONFIG
@@ -99,21 +114,21 @@ class TradingAgentsGraph:
         if self.callbacks:
             llm_kwargs["callbacks"] = self.callbacks
 
-        deep_client = create_llm_client(
-            provider=self.config["llm_provider"],
-            model=self.config["deep_think_llm"],
-            base_url=self.config.get("backend_url"),
-            **llm_kwargs,
+        # Deep/quick LLMs honour their own *_fallbacks lists. With no fallback
+        # configured, ``_build_chat_with_fallbacks`` returns the bare chat
+        # model so the existing zero-config behaviour is preserved.
+        self.deep_thinking_llm = self._build_chat_with_fallbacks(
+            primary=self.config["deep_think_llm"],
+            fallbacks=self.config.get("deep_think_llm_fallbacks") or [],
+            llm_kwargs=llm_kwargs,
+            role="deep",
         )
-        quick_client = create_llm_client(
-            provider=self.config["llm_provider"],
-            model=self.config["quick_think_llm"],
-            base_url=self.config.get("backend_url"),
-            **llm_kwargs,
+        self.quick_thinking_llm = self._build_chat_with_fallbacks(
+            primary=self.config["quick_think_llm"],
+            fallbacks=self.config.get("quick_think_llm_fallbacks") or [],
+            llm_kwargs=llm_kwargs,
+            role="quick",
         )
-
-        self.deep_thinking_llm = deep_client.get_llm()
-        self.quick_thinking_llm = quick_client.get_llm()
 
         # Build the role-keyed LLM map. Empty role-specific config values
         # fall back to the deep/quick pair so this is safe regardless of
@@ -224,6 +239,90 @@ class TradingAgentsGraph:
             ),
         }
 
+    def _resolve_provider_model(
+        self, entry: Any, default_provider: str,
+    ) -> Optional[Tuple[str, str]]:
+        """Normalise a fallback config entry to ``(provider, model)``.
+
+        Accepts either a plain string (uses the run's ``llm_provider``) or
+        a ``(provider, model)`` tuple/list/dict for cross-provider fallback.
+        Returns ``None`` for empty/whitespace strings so they can be
+        skipped without surprising behaviour.
+        """
+        if isinstance(entry, str):
+            model = entry.strip()
+            return (default_provider, model) if model else None
+        if isinstance(entry, dict):
+            provider = (entry.get("provider") or default_provider).strip()
+            model = (entry.get("model") or "").strip()
+            return (provider, model) if model else None
+        if isinstance(entry, (tuple, list)) and len(entry) == 2:
+            provider = (entry[0] or default_provider).strip()
+            model = (entry[1] or "").strip()
+            return (provider, model) if model else None
+        logger.warning("Ignoring unrecognised fallback entry: %r", entry)
+        return None
+
+    def _build_chat_with_fallbacks(
+        self,
+        *,
+        primary: Any,
+        fallbacks: List[Any],
+        llm_kwargs: Dict[str, Any],
+        role: str,
+    ) -> Any:
+        """Build a chat model, optionally wrapped with fallback retry.
+
+        With an empty ``fallbacks`` list this returns the bare LangChain
+        chat model so the call site is indistinguishable from the
+        previous ``create_llm_client(...).get_llm()`` pattern. With one
+        or more fallbacks it returns a :class:`FallbackChatModel` that
+        retries against each fallback on recoverable upstream errors.
+
+        Cross-provider entries (``("openai", "gpt-5-mini")``) are honoured
+        so a free-tier OpenRouter primary can fall back to a paid OpenAI
+        key when the free pool is rate-limited.
+        """
+        provider = self.config["llm_provider"]
+        base_url = self.config.get("backend_url")
+
+        primary_pm = self._resolve_provider_model(primary, provider)
+        if primary_pm is None:
+            raise ValueError(f"Empty primary model for role '{role}'")
+        primary_provider, primary_model = primary_pm
+        primary_llm = create_llm_client(
+            provider=primary_provider,
+            model=primary_model,
+            base_url=base_url if primary_provider == provider else None,
+            **llm_kwargs,
+        ).get_llm()
+
+        fallback_llms: List[Any] = []
+        for entry in fallbacks:
+            pm = self._resolve_provider_model(entry, provider)
+            if pm is None:
+                continue
+            fb_provider, fb_model = pm
+            try:
+                fallback_llms.append(
+                    create_llm_client(
+                        provider=fb_provider,
+                        model=fb_model,
+                        base_url=base_url if fb_provider == provider else None,
+                        **llm_kwargs,
+                    ).get_llm()
+                )
+            except Exception as e:
+                # Don't fail the whole run if a fallback is misconfigured —
+                # log and skip so the primary still works.
+                logger.warning(
+                    "Skipping %s fallback %s/%s (build failed: %s)",
+                    role, fb_provider, fb_model, e,
+                )
+        if not fallback_llms:
+            return primary_llm
+        return FallbackChatModel(primary_llm, fallback_llms, role=role)
+
     def _build_role_llms(self, llm_kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """Construct a role-keyed LLM map.
 
@@ -243,43 +342,55 @@ class TradingAgentsGraph:
         """
         deep_model = self.config.get("deep_think_llm")
         quick_model = self.config.get("quick_think_llm")
-        provider = self.config.get("llm_provider")
-        base_url = self.config.get("backend_url")
 
-        # Memo by model string; primes with the already-built deep/quick LLMs
-        # so a role pointing at the same model reuses the same client.
-        cache: Dict[str, Any] = {
-            deep_model: self.deep_thinking_llm,
-            quick_model: self.quick_thinking_llm,
+        # Memo by (primary_model, fallback_tuple); primes with the already-built
+        # deep/quick LLMs so a role pointing at the same model + fallback list
+        # reuses a single client. Fallback lists become hashable tuples for keying.
+        deep_fbs = tuple(self.config.get("deep_think_llm_fallbacks") or [])
+        quick_fbs = tuple(self.config.get("quick_think_llm_fallbacks") or [])
+        cache: Dict[Tuple[Any, Any], Any] = {
+            (deep_model, _hashable(deep_fbs)): self.deep_thinking_llm,
+            (quick_model, _hashable(quick_fbs)): self.quick_thinking_llm,
         }
 
-        def get_or_build(model: Any, fallback: Any) -> Any:
+        def get_or_build(
+            model: Any, fallbacks: List[Any], default: Any, role: str,
+        ) -> Any:
             model_str = (model or "").strip() if isinstance(model, str) else ""
             if not model_str:
-                return fallback
-            if model_str in cache:
-                return cache[model_str]
-            client = create_llm_client(
-                provider=provider,
-                model=model_str,
-                base_url=base_url,
-                **llm_kwargs,
+                return default
+            key = (model_str, _hashable(tuple(fallbacks or [])))
+            if key in cache:
+                return cache[key]
+            llm = self._build_chat_with_fallbacks(
+                primary=model_str,
+                fallbacks=fallbacks or [],
+                llm_kwargs=llm_kwargs,
+                role=role,
             )
-            llm = client.get_llm()
-            cache[model_str] = llm
+            cache[key] = llm
             return llm
 
         return {
             "deep": self.deep_thinking_llm,
             "quick": self.quick_thinking_llm,
             "structured_output": get_or_build(
-                self.config.get("structured_output_llm"), fallback=self.deep_thinking_llm,
+                self.config.get("structured_output_llm"),
+                self.config.get("structured_output_llm_fallbacks") or [],
+                default=self.deep_thinking_llm,
+                role="structured_output",
             ),
             "quant": get_or_build(
-                self.config.get("quant_llm"), fallback=self.quick_thinking_llm,
+                self.config.get("quant_llm"),
+                self.config.get("quant_llm_fallbacks") or [],
+                default=self.quick_thinking_llm,
+                role="quant",
             ),
             "light": get_or_build(
-                self.config.get("light_llm"), fallback=self.quick_thinking_llm,
+                self.config.get("light_llm"),
+                self.config.get("light_llm_fallbacks") or [],
+                default=self.quick_thinking_llm,
+                role="light",
             ),
         }
 

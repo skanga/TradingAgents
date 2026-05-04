@@ -310,7 +310,22 @@ Each key is optional. When a key is missing, the corresponding dataflow returns 
 
 Empty strings fall back to `deep_think_llm` / `quick_think_llm`. Identical model strings across roles share a single client.
 
-> **Free-tier OpenRouter caveat**: free models route through shared upstream providers with aggressive RPM caps. If a free model 429s persistently, set the affected role-key to `""` (falls back to `quick_think_llm`) or BYOK at [openrouter.ai/settings/integrations](https://openrouter.ai/settings/integrations).
+#### Fallback chains
+
+Each role above accepts an optional `*_fallbacks` list. On a recoverable upstream error (`429` rate limit, `5xx`, request timeout, transport drop) the wrapper retries the call against each fallback in order; non-recoverable errors (auth, schema, other 4xx) propagate immediately so the real bug surfaces. Order entries best-quality-first; a free model 429'ing on its upstream pool typically rotates through different providers if you pick fallbacks from `:free` models with different upstream backends.
+
+```python
+cfg["quick_think_llm"]           = "openai/gpt-oss-20b:free"
+cfg["quick_think_llm_fallbacks"] = [
+    "meta-llama/llama-3.3-70b-instruct:free",   # different upstream
+    "google/gemini-2.0-flash-exp:free",         # different upstream
+    ("openai", "gpt-5-mini"),                   # cross-provider fallback (paid)
+]
+```
+
+Same pattern for `deep_think_llm_fallbacks`, `structured_output_llm_fallbacks`, `quant_llm_fallbacks`, `light_llm_fallbacks`. Plain strings use the run's `llm_provider`; `(provider, model)` tuples (or `{"provider": ..., "model": ...}` dicts) cross providers, which is how a free OpenRouter primary can fall back to a paid OpenAI key from your `.env`. Empty list (the default) disables fallback for that role.
+
+> **Free-tier OpenRouter caveat**: free models route through shared upstream providers with aggressive RPM caps. If a free model 429s persistently, configure `*_fallbacks` (above) so the run survives one upstream stalling, or BYOK at [openrouter.ai/settings/integrations](https://openrouter.ai/settings/integrations) so requests hit your own quota pool.
 
 See [`CLAUDE.md`](CLAUDE.md) for the deeper architecture: data flow, vendor router, role-LLM construction, persistence layout, and repo-specific coding conventions.
 

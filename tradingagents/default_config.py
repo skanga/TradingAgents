@@ -21,13 +21,25 @@ DEFAULT_CONFIG = {
     # by the OpenAI/xAI/DeepSeek/Qwen/GLM/Ollama/OpenRouter clients.
     "backend_url": "https://openrouter.ai/api/v1",
 
-    # Per-role LLM overrides (config keys reserved; not yet consumed).
-    # Empty string falls back to deep_think_llm or quick_think_llm. The agent
-    # factories need to be threaded with a role-keyed LLM map before these
-    # take effect — see TODO(per-role LLMs) in graph/trading_graph.py.
+    # Per-role LLM overrides. Empty string falls back to deep_think_llm or
+    # quick_think_llm via _build_role_llms. See graph/trading_graph.py for
+    # the role-to-agent mapping.
     "structured_output_llm": "openai/gpt-oss-120b:free",   # Research Mgr, Portfolio Mgr
     "quant_llm":             "qwen/qwen3-next-80b-a3b-instruct:free",  # Market, Options, Risk
     "light_llm":             "meta-llama/llama-3.3-70b-instruct:free", # Social, Sector, Form4
+
+    # Per-role fallback chains. Each entry is either a model string (uses the
+    # run's ``llm_provider``) or a ``(provider, model)`` tuple / dict for
+    # cross-provider fallback (e.g. OpenRouter free → paid OpenAI key). On
+    # any recoverable upstream error (429, 5xx, timeout, transport drop) the
+    # next entry is tried. Auth/schema/4xx errors are not caught — they
+    # would fail again on the next model. Empty list disables fallback for
+    # that role and preserves zero-config behaviour.
+    "deep_think_llm_fallbacks":        [],
+    "quick_think_llm_fallbacks":       [],
+    "structured_output_llm_fallbacks": [],
+    "quant_llm_fallbacks":             [],
+    "light_llm_fallbacks":             [],
 
     # Provider-specific thinking configuration
     "google_thinking_level": None,      # "high", "minimal", etc.
