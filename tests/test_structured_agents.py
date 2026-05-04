@@ -67,6 +67,24 @@ class TestRenderTraderProposal:
         assert "Position Sizing" not in md
         assert "FINAL TRANSACTION PROPOSAL: **SELL**" in md
 
+    def test_rejects_buy_stop_loss_above_entry(self):
+        with pytest.raises(ValidationError, match="Buy stop_loss must be below entry_price"):
+            TraderProposal(
+                action=TraderAction.BUY,
+                reasoning="Good setup.",
+                entry_price=416,
+                stop_loss=460,
+            )
+
+    def test_rejects_sell_stop_loss_below_entry(self):
+        with pytest.raises(ValidationError, match="Sell stop_loss must be above entry_price"):
+            TraderProposal(
+                action=TraderAction.SELL,
+                reasoning="Weak setup.",
+                entry_price=460,
+                stop_loss=416,
+            )
+
 
 @pytest.mark.unit
 class TestNullishFloatCoercion:
@@ -204,30 +222,17 @@ class TestTraderAgent:
         prompt = captured["prompt"]
         assert any("Proposed Investment Plan" in m["content"] for m in prompt)
 
-    def test_prompt_includes_market_report_for_price_levels(self):
-        # #1167: the Trader must see the technical market report so entry/stop
-        # levels are grounded in real price structure, not just the digested plan.
+    def test_prompt_includes_structured_output_guardrails(self):
         captured = {}
-        trader = create_trader(_structured_trader_llm(captured))
+        llm = _structured_trader_llm(captured)
+        trader = create_trader(llm)
         trader(_make_trader_state())
-        user = " ".join(m["content"] for m in captured["prompt"] if m["role"] == "user")
-        system = " ".join(m["content"] for m in captured["prompt"] if m["role"] == "system")
-        assert "Technical Market Report:" in user
-        assert "14-day ATR 4.2" in user            # the actual report content reached the Trader
-        assert "support $178, resistance $196" in user
-        assert "Ground concrete price levels" in system
-
-    def test_empty_market_report_omits_the_section_and_grounding(self):
-        # #1167: when the market analyst wasn't selected the report is empty, so
-        # don't tell the Trader to ground levels in a report it doesn't have.
-        captured = {}
-        state = _make_trader_state()
-        state["market_report"] = ""
-        create_trader(_structured_trader_llm(captured))(state)
-        text = " ".join(m["content"] for m in captured["prompt"])
-        assert "Technical Market Report:" not in text
-        assert "Ground concrete price levels" not in text
-        assert "Proposed Investment Plan" in text  # still present
+        prompt = captured["prompt"]
+        prompt_text = "\n".join(m["content"] for m in prompt)
+        assert "plain ASCII punctuation" in prompt_text
+        assert "Do not use smart quotes" in prompt_text
+        assert "Buy stop_loss must be below entry_price" in prompt_text
+        assert "Sell stop_loss must be above entry_price" in prompt_text
 
     def test_falls_back_to_freetext_when_structured_unavailable(self):
         plain_response = (

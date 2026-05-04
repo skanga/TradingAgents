@@ -1,6 +1,7 @@
 import datetime
 import time
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -20,6 +21,7 @@ from rich.table import Table
 
 from cli.announcements import fetch_announcements, display_announcements
 from cli.llm_config import LLMConfigOverrides, ResolvedLLMConfig, resolve_llm_config
+from cli.models import AnalystType
 from cli.stats_handler import StatsCallbackHandler
 from cli.utils import (
     ask_anthropic_effort,
@@ -59,6 +61,18 @@ app = typer.Typer(
     help="TradingAgents CLI: Multi-Agents LLM Financial Trading Framework",
     add_completion=True,  # Enable shell completion
 )
+
+
+@dataclass(frozen=True)
+class SelectionOverrides:
+    ticker: str | None = None
+    analysis_date: str | None = None
+    output_language: str | None = None
+    analysts: list[AnalystType] | None = None
+    research_depth: int | None = None
+    save_report: bool | None = None
+    save_path: Path | None = None
+    display_report: bool | None = None
 
 
 # Create a deque to store recent messages with a maximum length
@@ -509,8 +523,44 @@ def update_display(layout, message_buffer: MessageBuffer, spinner_text=None, sta
     layout["footer"].update(Panel(stats_table, border_style="grey50"))
 
 
-def get_user_selections(resolved_llm: ResolvedLLMConfig | None = None):
+def get_user_selections(
+    resolved_llm: ResolvedLLMConfig | None = None,
+    selection_overrides: SelectionOverrides | None = None,
+):
     """Get all user selections before starting the analysis display."""
+    selection_overrides = selection_overrides or SelectionOverrides()
+    selected_ticker = selection_overrides.ticker
+    analysis_date = selection_overrides.analysis_date
+    output_language = selection_overrides.output_language
+    selected_analysts = selection_overrides.analysts
+    selected_research_depth = selection_overrides.research_depth
+
+    has_all_run_inputs = bool(
+        selected_ticker
+        and analysis_date
+        and output_language
+        and selected_analysts
+        and selected_research_depth is not None
+        and resolved_llm
+        and resolved_llm.is_complete
+    )
+
+    if has_all_run_inputs:
+        assert resolved_llm is not None
+        assert selected_ticker is not None
+        assert analysis_date is not None
+        assert output_language is not None
+        assert selected_analysts is not None
+        assert selected_research_depth is not None
+        return _build_user_selections(
+            resolved_llm=resolved_llm,
+            selected_ticker=selected_ticker,
+            analysis_date=analysis_date,
+            output_language=output_language,
+            selected_analysts=selected_analysts,
+            selected_research_depth=selected_research_depth,
+        )
+
     # Display ASCII art welcome message
     with open(Path(__file__).parent / "static" / "welcome.txt", encoding="utf-8") as f:
         welcome_ascii = f.read()
@@ -548,55 +598,31 @@ def get_user_selections(resolved_llm: ResolvedLLMConfig | None = None):
             box_content += f"\n[dim]Default: {default}[/dim]"
         return Panel(box_content, border_style="blue", padding=(1, 2))
 
-    def thinking_value_or_prompt(env_var, config_key, label, box_title, box_body, prompt_fn):
-        """Return the env-configured reasoning/thinking value, or prompt for it.
-
-        When ``env_var`` is set the interactive choice is skipped and the value
-        the env overlay placed on DEFAULT_CONFIG is used — mirroring the
-        env-precedence rule applied to the other selection steps.
-        """
-        if os.environ.get(env_var):
-            value = DEFAULT_CONFIG[config_key]
-            console.print(f"[green]✓ {label} from environment:[/green] {value}")
-            return value
-        console.print(create_question_box(box_title, box_body))
-        return prompt_fn()
-
-    # Step 1: Ticker symbol
-    console.print(
-        create_question_box(
-            "Step 1: Ticker Symbol",
-            "Enter the ticker, with exchange suffix when needed (e.g. SPY, 0700.HK, BTC-USD)",
-            "SPY",
-        )
-    )
-    selected_ticker = get_ticker()
-    asset_type = detect_asset_type(selected_ticker)
-    # Only announce when it's not the default stock path, to avoid printing
-    # "stock" on every run.
-    if asset_type.value != "stock":
+    if not selected_ticker:
+        # Step 1: Ticker symbol
         console.print(
-            f"[green]Detected asset type:[/green] {asset_type.value}"
+            create_question_box(
+                "Step 1: Ticker Symbol",
+                "Enter the exact ticker symbol to analyze, including exchange suffix when needed (examples: SPY, CNC.TO, 7203.T, 0700.HK)",
+                "SPY",
+            )
         )
+        selected_ticker = get_ticker()
 
-    # Step 2: Analysis date
-    default_date = datetime.datetime.now().strftime("%Y-%m-%d")
-    console.print(
-        create_question_box(
-            "Step 2: Analysis Date",
-            "Enter the analysis date (YYYY-MM-DD)",
-            default_date,
-        )
-    )
-    analysis_date = get_analysis_date()
-
-    # Step 3: Output language (skipped when set via TRADINGAGENTS_OUTPUT_LANGUAGE)
-    if os.environ.get("TRADINGAGENTS_OUTPUT_LANGUAGE"):
-        output_language = DEFAULT_CONFIG["output_language"]
+    if not analysis_date:
+        # Step 2: Analysis date
+        default_date = datetime.datetime.now().strftime("%Y-%m-%d")
         console.print(
-            f"[green]✓ Output language from environment:[/green] {output_language}"
+            create_question_box(
+                "Step 2: Analysis Date",
+                "Enter the analysis date (YYYY-MM-DD)",
+                default_date,
+            )
         )
-    else:
+        analysis_date = get_analysis_date()
+
+    if not output_language:
+        # Step 3: Output language
         console.print(
             create_question_box(
                 "Step 3: Output Language",
@@ -605,25 +631,26 @@ def get_user_selections(resolved_llm: ResolvedLLMConfig | None = None):
         )
         output_language = ask_output_language()
 
-    # Step 4: Select analysts
-    console.print(
-        create_question_box(
-            "Step 4: Analysts Team", "Select your LLM analyst agents for the analysis"
+    if not selected_analysts:
+        # Step 4: Select analysts
+        console.print(
+            create_question_box(
+                "Step 4: Analysts Team", "Select your LLM analyst agents for the analysis"
+            )
         )
-    )
-    selected_analysts = select_analysts(asset_type)
-    console.print(
-        f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
-    )
+        selected_analysts = select_analysts()
+        console.print(
+            f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
+        )
 
-    # Step 5: Research depth (skipped when both round counts are set via env).
-    # Research depth maps to the debate + risk round counts; when both are
-    # supplied through TRADINGAGENTS_MAX_DEBATE_ROUNDS / _MAX_RISK_ROUNDS we keep
-    # the run non-interactive and honor the env values (#977).
-    depth_from_env = bool(os.environ.get("TRADINGAGENTS_MAX_DEBATE_ROUNDS")) and bool(
-        os.environ.get("TRADINGAGENTS_MAX_RISK_ROUNDS")
-    )
-    selected_research_depth = select_research_depth()
+    if selected_research_depth is None:
+        # Step 5: Research depth
+        console.print(
+            create_question_box(
+                "Step 5: Research Depth", "Select your research depth level"
+            )
+        )
+        selected_research_depth = select_research_depth()
 
     selected_llm_provider = resolved_llm.provider if resolved_llm else None
     backend_url = resolved_llm.backend_url if resolved_llm else None
@@ -683,19 +710,46 @@ def get_user_selections(resolved_llm: ResolvedLLMConfig | None = None):
             )
         )
 
+    return _build_user_selections(
+        resolved_llm=ResolvedLLMConfig(
+            provider=selected_llm_provider,
+            quick_model=selected_shallow_thinker,
+            deep_model=selected_deep_thinker,
+            backend_url=backend_url,
+            google_thinking_level=thinking_level,
+            openai_reasoning_effort=reasoning_effort,
+            anthropic_effort=anthropic_effort,
+        ),
+        selected_ticker=selected_ticker,
+        analysis_date=analysis_date,
+        output_language=output_language,
+        selected_analysts=selected_analysts,
+        selected_research_depth=selected_research_depth,
+    )
+
+
+def _build_user_selections(
+    *,
+    resolved_llm: ResolvedLLMConfig,
+    selected_ticker: str,
+    analysis_date: str,
+    output_language: str,
+    selected_analysts: list[AnalystType],
+    selected_research_depth: int,
+) -> dict[str, Any]:
     return {
         "ticker": selected_ticker,
         "asset_type": asset_type.value,
         "analysis_date": analysis_date,
         "analysts": selected_analysts,
         "research_depth": selected_research_depth,
-        "llm_provider": selected_llm_provider.lower(),
-        "backend_url": backend_url,
-        "shallow_thinker": selected_shallow_thinker,
-        "deep_thinker": selected_deep_thinker,
-        "google_thinking_level": thinking_level,
-        "openai_reasoning_effort": reasoning_effort,
-        "anthropic_effort": anthropic_effort,
+        "llm_provider": cast(str, resolved_llm.provider).lower(),
+        "backend_url": resolved_llm.backend_url,
+        "shallow_thinker": resolved_llm.quick_model,
+        "deep_thinker": resolved_llm.deep_model,
+        "google_thinking_level": resolved_llm.google_thinking_level,
+        "openai_reasoning_effort": resolved_llm.openai_reasoning_effort,
+        "anthropic_effort": resolved_llm.anthropic_effort,
         "output_language": output_language,
     }
 
@@ -930,13 +984,60 @@ def format_tool_args(args, max_length=80) -> str:
         return result[:max_length - 3] + "..."
     return result
 
+def _parse_analysts_option(value: str | None) -> list[AnalystType] | None:
+    if value is None or not value.strip():
+        return None
+
+    if value.strip().lower() == "all":
+        return list(AnalystType)
+
+    analysts = []
+    valid_values = {analyst.value for analyst in AnalystType}
+    for raw_key in value.split(","):
+        key = raw_key.strip().lower()
+        if not key:
+            continue
+        if key not in valid_values:
+            valid = ", ".join(sorted(valid_values))
+            raise typer.BadParameter(f"Invalid analyst '{key}'. Valid values: {valid}")
+        analysts.append(AnalystType(key))
+
+    if not analysts:
+        raise typer.BadParameter("At least one analyst must be provided.")
+    return analysts
+
+
+def _validate_research_depth(value: int | None) -> int | None:
+    if value is None:
+        return None
+    if value not in (1, 3, 5):
+        raise typer.BadParameter("Research depth must be one of: 1, 3, 5.")
+    return value
+
+
+def _validate_analysis_date_option(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if value.strip().lower() == "today":
+        return datetime.datetime.now().strftime("%Y-%m-%d")
+    try:
+        analysis_date = datetime.datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise typer.BadParameter("Analysis date must use YYYY-MM-DD format.") from exc
+    if analysis_date.date() > datetime.datetime.now().date():
+        raise typer.BadParameter("Analysis date cannot be in the future.")
+    return value
+
+
 def run_analysis(
     checkpoint: bool = False,
     llm_overrides: LLMConfigOverrides | None = None,
+    selection_overrides: SelectionOverrides | None = None,
 ):
     # First get all user selections
     resolved_llm = resolve_llm_config(llm_overrides)
-    selections = get_user_selections(resolved_llm)
+    selection_overrides = selection_overrides or SelectionOverrides()
+    selections = get_user_selections(resolved_llm, selection_overrides)
 
     Round counts and checkpoint follow "explicit env/flag wins": an env-applied
     value on DEFAULT_CONFIG is preserved unless the user overrode it on the CLI.
@@ -1208,16 +1309,24 @@ def run_analysis(
     console.print("\n[bold cyan]Analysis Complete![/bold cyan]\n")
     console.print(f"[dim]{analyst_wall_time_tracker.format_summary()}[/dim]")
 
-    # Prompt to save report
-    save_choice = typer.prompt("Save report?", default="Y").strip().upper()
-    if save_choice in ("Y", "YES", ""):
+    # Prompt to save report unless configured by CLI.
+    save_report = selection_overrides.save_report
+    if save_report is None:
+        save_choice = typer.prompt("Save report?", default="Y").strip().upper()
+        save_report = save_choice in ("Y", "YES", "")
+    if save_report:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         default_path = Path.cwd() / "reports" / f"{selections['ticker']}_{timestamp}"
-        save_path_str = typer.prompt(
-            "Save path (press Enter for default)",
-            default=str(default_path)
-        ).strip()
-        save_path = Path(save_path_str)
+        save_path = selection_overrides.save_path
+        if save_path is None:
+            if selection_overrides.save_report is True:
+                save_path = default_path
+            else:
+                save_path_str = typer.prompt(
+                    "Save path (press Enter for default)",
+                    default=str(default_path)
+                ).strip()
+                save_path = Path(save_path_str)
         try:
             report_file = save_report_to_disk(final_state, selections["ticker"], save_path)
             console.print(f"\n[green]✓ Report saved to:[/green] {save_path.resolve()}")
@@ -1225,9 +1334,12 @@ def run_analysis(
         except Exception as e:
             console.print(f"[red]Error saving report: {e}[/red]")
 
-    # Prompt to display full report
-    display_choice = typer.prompt("\nDisplay full report on screen?", default="Y").strip().upper()
-    if display_choice in ("Y", "YES", ""):
+    # Prompt to display full report unless configured by CLI.
+    display_report = selection_overrides.display_report
+    if display_report is None:
+        display_choice = typer.prompt("\nDisplay full report on screen?", default="Y").strip().upper()
+        display_report = display_choice in ("Y", "YES", "")
+    if display_report:
         display_complete_report(final_state)
 
 
@@ -1243,6 +1355,31 @@ def analyze(
         False,
         "--clear-checkpoints",
         help="Delete all saved checkpoints before running (force fresh start).",
+    ),
+    ticker: str | None = typer.Option(
+        None,
+        "--ticker",
+        help="Ticker symbol to analyze, e.g. SPY or CNC.TO.",
+    ),
+    analysis_date: str | None = typer.Option(
+        None,
+        "--analysis-date",
+        help="Analysis date in YYYY-MM-DD format, or 'today'.",
+    ),
+    output_language: str | None = typer.Option(
+        None,
+        "--output-language",
+        help="Language for analyst reports and final decision, e.g. English, Spanish, Chinese.",
+    ),
+    analysts: str | None = typer.Option(
+        None,
+        "--analysts",
+        help="Comma-separated analyst keys: market,social,news,fundamentals; or 'all'.",
+    ),
+    research_depth: int | None = typer.Option(
+        None,
+        "--research-depth",
+        help="Research depth, e.g. 1=shallow, 3=medium, 5=deep.",
     ),
     llm_provider: str | None = typer.Option(
         None,
@@ -1279,6 +1416,21 @@ def analyze(
         "--anthropic-effort",
         help="Anthropic effort level.",
     ),
+    save_report: bool | None = typer.Option(
+        None,
+        "--save-report/--no-save-report",
+        help="Save the final report after analysis.",
+    ),
+    save_path: Path | None = typer.Option(
+        None,
+        "--save-path",
+        help="Directory where the report should be saved.",
+    ),
+    display_report: bool | None = typer.Option(
+        None,
+        "--display-report/--no-display-report",
+        help="Display the full report on screen after analysis.",
+    ),
 ):
     if clear_checkpoints:
         from tradingagents.graph.checkpointer import clear_all_checkpoints
@@ -1294,6 +1446,16 @@ def analyze(
             openai_reasoning_effort=openai_reasoning_effort,
             google_thinking_level=google_thinking_level,
             anthropic_effort=anthropic_effort,
+        ),
+        selection_overrides=SelectionOverrides(
+            ticker=normalize_ticker_symbol(ticker) if ticker else None,
+            analysis_date=_validate_analysis_date_option(analysis_date),
+            output_language=output_language,
+            analysts=_parse_analysts_option(analysts),
+            research_depth=_validate_research_depth(research_depth),
+            save_report=save_report,
+            save_path=save_path,
+            display_report=display_report,
         ),
     )
 

@@ -30,11 +30,8 @@
 # TradingAgents: Multi-Agents LLM Financial Trading Framework
 
 ## News
-- [2026-08] **TradingAgents v0.4.0** released with look-ahead / point-in-time fixes across FRED macro, social sentiment, and the decision-log memory; clearer decision signals; working CLI checkpoint resume; Trader price grounding; and the GPT-5.6 and GLM-5.3 models. See [CHANGELOG.md](CHANGELOG.md) for the full list.
-- [2026-07] **TradingAgents v0.3.1** released with correctness and stability fixes: Alpha Vantage look-ahead filtering, graph-router crash-safety, graph-shape-aware checkpoint resume, working crypto sentiment sources, a configurable LLM retry budget, Bedrock API-key auth, and Claude Sonnet 5 / Fable 5 support.
-- [2026-06] **TradingAgents v0.3.0** released with a verified data-access contract, an expanded provider registry (NVIDIA, Kimi, Groq, Mistral, Bedrock, and any OpenAI-compatible endpoint), FRED and Polymarket data vendors, a current-generation model catalog, and a CI gate.
-- [2026-05] **TradingAgents v0.2.5** released with the grounded Sentiment Analyst, GPT-5.5 etc. model coverage, Qwen/GLM/MiniMax dual-region support, `TRADINGAGENTS_*` env-var configurability with API-key auto-detection, remote Ollama support, non-US alpha benchmarks, and ticker path-traversal hardening.
-- [2026-04] **TradingAgents v0.2.4** released with structured-output agents (Research Manager, Trader, Portfolio Manager), LangGraph checkpoint resume, persistent decision log, DeepSeek/Qwen/GLM/Azure provider support, Docker, and a Windows UTF-8 encoding fix.
+
+- [2026-04] **TradingAgents v0.2.4** released with structured-output agents (Research Manager, Trader, Portfolio Manager), LangGraph checkpoint resume, persistent decision log, DeepSeek/Qwen/GLM/Azure provider support, Docker, and a Windows UTF-8 encoding fix. See [CHANGELOG.md](CHANGELOG.md) for the full list.
 - [2026-03] **TradingAgents v0.2.3** released with multi-language support, GPT-5.4 family models, unified model catalog, backtesting date fidelity, and proxy support.
 - [2026-03] **TradingAgents v0.2.2** released with GPT-5.4/Gemini 3.1/Claude 4.6 model coverage, five-tier rating scale, OpenAI Responses API, Anthropic effort control, and cross-platform stability.
 - [2026-02] **TradingAgents v0.2.0** released with multi-provider LLM support (GPT-5.x, Gemini 3.x, Claude 4.x, Grok 4.x) and improved system architecture.
@@ -47,7 +44,7 @@
 </div>
 
 > 🎉 **TradingAgents** officially released! We have received numerous inquiries about the work, and we would like to express our thanks for the enthusiasm in our community.
->
+> 
 > So we decided to fully open-source the framework. Looking forward to building impactful projects with you!
 
 ## TradingAgents Framework
@@ -63,6 +60,7 @@ TradingAgents is a multi-agent trading framework that mirrors the dynamics of re
 Our framework decomposes complex trading tasks into specialized roles.
 
 ### Analyst Team
+
 - Fundamentals Analyst: Evaluates company financials and performance metrics, identifying intrinsic values and potential red flags.
 - Sentiment Analyst: Aggregates news headlines, StockTwits, and Reddit chatter into a single sentiment read to gauge short-term market mood.
 - News Analyst: Monitors global news and macroeconomic indicators, interpreting the impact of events on market conditions.
@@ -73,6 +71,7 @@ Our framework decomposes complex trading tasks into specialized roles.
 </p>
 
 ### Researcher Team
+
 - Comprises both bullish and bearish researchers who critically assess the insights provided by the Analyst Team. Through structured debates, they balance potential gains against inherent risks.
 
 <p align="center">
@@ -80,13 +79,15 @@ Our framework decomposes complex trading tasks into specialized roles.
 </p>
 
 ### Trader Agent
-- Composes reports from the analysts and researchers to make informed trading decisions, determining the timing and magnitude of trades.
+
+- Composes reports from the analysts and researchers to make informed trading decisions. It determines the timing and magnitude of trades based on comprehensive market insights.
 
 <p align="center">
   <img src="assets/trader.png" width="70%" style="display: inline-block; margin: 0 2%;">
 </p>
 
 ### Risk Management and Portfolio Manager
+
 - Continuously evaluates portfolio risk by assessing market volatility, liquidity, and other risk factors. The risk management team evaluates and adjusts trading strategies, providing assessment reports to the Portfolio Manager for final decision.
 - The Portfolio Manager approves/rejects the transaction proposal. If approved, the order will be sent to the simulated exchange and executed.
 
@@ -99,18 +100,21 @@ Our framework decomposes complex trading tasks into specialized roles.
 ### Installation
 
 Clone TradingAgents:
+
 ```bash
 git clone https://github.com/TauricResearch/TradingAgents.git
 cd TradingAgents
 ```
 
 Create a virtual environment with python 3.13 in any of your favorite environment managers:
+
 ```bash
 conda create -n tradingagents python=3.12
 conda activate tradingagents
 ```
 
 For local Windows development, a project-local virtual environment is recommended:
+
 ```powershell
 python -m venv tradingagents
 .\tradingagents\Scripts\activate
@@ -118,24 +122,44 @@ python -m pip install -e ".[dev]"
 ```
 
 Install the package and its dependencies:
+
 ```bash
 pip install .
 ```
 
 Run tests from the active environment with:
+
 ```powershell
 python -m pytest
+```
+
+Common development checks:
+
+```powershell
+# Run the full test suite
+python -m pytest
+
+# Run a focused test file
+python -m pytest tests/test_cli_llm_config.py -v
+
+# Lint
+ruff check .
+
+# Static type check
+mypy .
 ```
 
 ### Docker
 
 Alternatively, run with Docker:
+
 ```bash
 cp .env.example .env  # add your API keys
 docker compose run --rm tradingagents
 ```
 
 For local models with Ollama:
+
 ```bash
 docker compose --profile ollama run --rm tradingagents-ollama
 ```
@@ -169,29 +193,67 @@ For local models, configure Ollama with `llm_provider: "ollama"`. The default en
 For any other OpenAI-compatible server (vLLM, LM Studio, llama.cpp, or a custom relay), use `llm_provider: "openai_compatible"` and set the endpoint via `backend_url` (or `TRADINGAGENTS_LLM_BACKEND_URL`), e.g. `http://localhost:8000/v1` for vLLM or `http://localhost:1234/v1` for LM Studio. The model is whatever your server serves. No key is needed for local servers; set `OPENAI_COMPATIBLE_API_KEY` when the endpoint requires one.
 
 Alternatively, copy `.env.example` to `.env` and fill in your keys:
+
 ```bash
 cp .env.example .env
 ```
 
-LLM runtime settings can come from CLI options or `.env` variables. CLI options take precedence over `.env` and environment variables; missing values are requested by the interactive TUI.
+LLM runtime settings can come from CLI options or `.env` variables. CLI options take precedence over `.env` and environment variables. When `llm_provider`, `quick_model`, and `deep_model` are already configured, the interactive TUI skips the provider/model prompts and only asks for unrelated run settings such as ticker, date, analysts, and research depth.
+
+Supported runtime env vars:
+
+```bash
+TRADINGAGENTS_LLM_PROVIDER=openai
+TRADINGAGENTS_QUICK_MODEL=gpt-5.4-mini
+TRADINGAGENTS_DEEP_MODEL=gpt-5.4
+TRADINGAGENTS_BACKEND_URL=
+TRADINGAGENTS_OPENAI_REASONING_EFFORT=
+TRADINGAGENTS_GOOGLE_THINKING_LEVEL=
+TRADINGAGENTS_ANTHROPIC_EFFORT=
+```
 
 For any OpenAI-compatible endpoint, use the OpenAI provider with a custom base URL:
 
 ```bash
 tradingagents \
+  --ticker SPY \
+  --analysis-date today \
+  --output-language English \
+  --analysts market,news,fundamentals \
+  --research-depth 3 \
   --llm-provider openai \
   --backend-url https://api.inceptionlabs.ai/v1 \
-  --quick-model mercury \
-  --deep-model mercury
+  --quick-model mercury-2 \
+  --deep-model mercury-2 \
+  --save-report \
+  --save-path reports/spy \
+  --no-display-report
 ```
+
+When all pre-analysis options are supplied, the CLI skips the setup prompts and starts the analysis directly.
+Use `--analysis-date today` to resolve the date at runtime, or pass an explicit `YYYY-MM-DD` value for reproducible historical runs.
+
+The same setup can live in `.env`:
+
+```bash
+OPENAI_API_KEY=...
+TRADINGAGENTS_LLM_PROVIDER=openai
+TRADINGAGENTS_BACKEND_URL=https://api.inceptionlabs.ai/v1
+TRADINGAGENTS_QUICK_MODEL=mercury-2
+TRADINGAGENTS_DEEP_MODEL=mercury-2
+```
+
+Custom OpenAI-compatible base URLs use the Chat Completions-compatible path and accept unknown model IDs without catalog validation warnings.
 
 ### CLI Usage
 
 Launch the interactive CLI:
+
 ```bash
 tradingagents          # installed command
 python -m cli.main     # alternative: run directly from source
 ```
+
 You will see a screen where you can select your desired tickers, analysis date, LLM provider, research depth, and more.
 
 ### Markets and tickers
@@ -257,6 +319,16 @@ print(decision)
 ```
 
 See `tradingagents/default_config.py` for all configuration options.
+
+For an OpenAI-compatible provider that is not listed in the model catalog, keep `llm_provider` as `openai` and set `backend_url`:
+
+```python
+config = DEFAULT_CONFIG.copy()
+config["llm_provider"] = "openai"
+config["backend_url"] = "https://api.inceptionlabs.ai/v1"
+config["quick_think_llm"] = "mercury"
+config["deep_think_llm"] = "mercury"
+```
 
 ## Persistence and Recovery
 
