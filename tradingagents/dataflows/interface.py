@@ -1,6 +1,20 @@
 from collections.abc import Callable
 from typing import Any
 
+import requests
+from yfinance.exceptions import YFRateLimitError
+
+# Import from vendor-specific modules
+from .y_finance import (
+    get_YFin_data_online,
+    get_stock_stats_indicators_window,
+    get_fundamentals as get_yfinance_fundamentals,
+    get_balance_sheet as get_yfinance_balance_sheet,
+    get_cashflow as get_yfinance_cashflow,
+    get_income_statement as get_yfinance_income_statement,
+    get_insider_transactions as get_yfinance_insider_transactions,
+)
+from .yfinance_news import get_news_yfinance, get_global_news_yfinance
 from .alpha_vantage import (
     get_balance_sheet as get_alpha_vantage_balance_sheet,
     get_cashflow as get_alpha_vantage_cashflow,
@@ -98,6 +112,16 @@ OPTIONAL_CATEGORIES = {"macro_data", "prediction_markets"}
 # Mapping of methods to their vendor-specific implementations
 VendorFunction = Callable[..., Any]
 
+TRANSIENT_VENDOR_ERRORS = (
+    AlphaVantageRateLimitError,
+    AlphaVantageTemporaryError,
+    YFRateLimitError,
+    requests.Timeout,
+    requests.ConnectionError,
+    requests.HTTPError,
+    TimeoutError,
+)
+
 VENDOR_METHODS: dict[str, dict[str, VendorFunction]] = {
     # core_stock_apis
     "get_stock_data": {
@@ -184,9 +208,7 @@ def route_to_vendor(method: str, *args, **kwargs):
     vendor_config = get_vendor(category, method)
     primary_vendors = [v.strip() for v in vendor_config.split(',')]
 
-    if method not in VENDOR_METHODS:
-        raise ValueError(f"Method '{method}' not supported")
-
+    # Build fallback chain: primary vendors first, then remaining available vendors
     all_available_vendors = list(VENDOR_METHODS[method].keys())
 
     # The configured vendor list IS the chain: we do NOT silently fall back to
@@ -213,7 +235,7 @@ def route_to_vendor(method: str, *args, **kwargs):
 
         try:
             return impl_func(*args, **kwargs)
-        except (AlphaVantageRateLimitError, AlphaVantageTemporaryError):
-            continue  # Only rate limits and temporary request failures trigger fallback
+        except TRANSIENT_VENDOR_ERRORS:
+            continue  # Rate limits and temporary request failures trigger fallback
 
     raise RuntimeError(f"No available vendor for '{method}'")

@@ -17,7 +17,7 @@ from tradingagents.agents import (
     create_news_analyst,
     create_portfolio_manager,
     create_research_manager,
-    create_sentiment_analyst,
+    create_social_media_analyst,
     create_trader,
 )
 from tradingagents.agents.utils.agent_states import AgentState
@@ -59,7 +59,7 @@ class GraphSetup:
         self.conditional_logic = conditional_logic
 
     def setup_graph(
-        self, selected_analysts=("market", "social", "news", "fundamentals")
+        self, selected_analysts=None
     ):
         """Set up and compile the agent workflow graph.
 
@@ -70,7 +70,16 @@ class GraphSetup:
                 - "news": News analyst
                 - "fundamentals": Fundamentals analyst
         """
-        plan = build_analyst_execution_plan(selected_analysts)
+        if selected_analysts is None:
+            selected_analysts = [
+                "market",
+                "social",
+                "news",
+                "fundamentals",
+            ]
+
+        if len(selected_analysts) == 0:
+            raise ValueError("Trading Agents Graph Setup Error: no analysts selected!")
 
         analyst_factories = {
             "market": lambda: create_market_analyst(self.quick_thinking_llm),

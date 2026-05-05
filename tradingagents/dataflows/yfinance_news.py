@@ -149,10 +149,11 @@ def get_global_news_yfinance(
     seen_titles = set()
 
     try:
+        candidate_limit = max(limit * 3, 10)
         for query in search_queries:
             search = yf_retry(lambda q=query: yf.Search(
                 query=q,
-                news_count=limit,
+                news_count=candidate_limit,
                 enable_fuzzy_query=True,
             ))
 
@@ -170,9 +171,6 @@ def get_global_news_yfinance(
                         seen_titles.add(title)
                         all_news.append(article)
 
-            if len(all_news) >= limit:
-                break
-
         if not all_news:
             return f"No global news found for {curr_date}"
 
@@ -181,25 +179,53 @@ def get_global_news_yfinance(
         start_dt = curr_dt - relativedelta(days=look_back_days)
         start_date = start_dt.strftime("%Y-%m-%d")
 
+        is_historical_run = curr_dt.date() < datetime.now().date()
         news_str = ""
-        kept = 0
-        for article in all_news[:limit]:
-            # Extract uniformly (flat + nested) and apply the same look-ahead-safe
-            # window filter, so flat articles can't leak future news (#1007).
-            data = _extract_article_data(article)
-            if not in_window(data["pub_date"], start_dt, curr_dt):
-                continue
-            news_str += f"### {data['title']} (source: {data['publisher']})\n"
-            if data["summary"]:
-                news_str += f"{data['summary']}\n"
-            if data["link"]:
-                news_str += f"Link: {data['link']}\n"
-            news_str += "\n"
-            kept += 1
+        included_count = 0
+        undated_excluded_count = 0
+        for article in all_news:
+            if included_count >= limit:
+                break
+            # Handle both flat and nested structures
+            if "content" in article:
+                data = _extract_article_data(article)
+                pub_date = data.get("pub_date")
+                if pub_date:
+                    pub_naive = pub_date.replace(tzinfo=None) if hasattr(pub_date, "replace") else pub_date
+                    if not (start_dt <= pub_naive <= curr_dt + relativedelta(days=1)):
+                        continue
+                elif is_historical_run:
+                    undated_excluded_count += 1
+                    continue
+                title = data["title"]
+                publisher = data["publisher"]
+                link = data["link"]
+                summary = data["summary"]
+            else:
+                if is_historical_run:
+                    undated_excluded_count += 1
+                    continue
+                title = article.get("title", "No title")
+                publisher = article.get("publisher", "Unknown")
+                link = article.get("link", "")
+                summary = ""
 
-        # All candidates fell outside the window -> say so rather than return an
-        # empty-bodied report (#993).
-        if kept == 0:
+            news_str += f"### {title} (source: {publisher})\n"
+            if summary:
+                news_str += f"{summary}\n"
+            if link:
+                news_str += f"Link: {link}\n"
+            news_str += "\n"
+            included_count += 1
+
+        if undated_excluded_count:
+            plural = "" if undated_excluded_count == 1 else "s"
+            news_str += (
+                f"Note: {undated_excluded_count} undated article{plural} excluded "
+                "from historical analysis because publication dates could not be verified.\n"
+            )
+
+        if included_count == 0 and undated_excluded_count == 0:
             return f"No global news found between {start_date} and {curr_date}"
 
         return f"## Global Market News, from {start_date} to {curr_date}:\n\n{news_str}"
