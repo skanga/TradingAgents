@@ -41,6 +41,9 @@ from tradingagents.agents.utils.peer_comparison_tools import (
 from tradingagents.agents.utils.etf_holdings_tools import (
     get_etf_holdings,
 )
+from tradingagents.agents.utils.etf_peer_comparison_tools import (
+    get_etf_peer_comparison,
+)
 
 
 def get_language_instruction() -> str:

@@ -35,6 +35,9 @@ from .lambda_finance_compare import (
     get_peer_comparison as get_lambda_finance_peer_comparison,
 )
 from .etf_holdings import get_etf_holdings as get_yfinance_etf_holdings
+from .etf_peer_compare import (
+    get_etf_peer_comparison as get_yfinance_etf_peer_comparison,
+)
 from .options_flow import (
     get_options_summary as get_yfinance_options_summary,
     get_iv_rank as get_yfinance_iv_rank,
@@ -124,6 +127,12 @@ TOOLS_CATEGORIES = {
         "description": "ETF sector weights, top holdings, and concentration metric",
         "tools": [
             "get_etf_holdings",
+        ],
+    },
+    "etf_peer_comparison_data": {
+        "description": "ETF cross-fund comparison on profile + returns + risk",
+        "tools": [
+            "get_etf_peer_comparison",
         ],
     },
 }
@@ -218,6 +227,10 @@ VENDOR_METHODS = {
     # etf_holdings_data
     "get_etf_holdings": {
         "yfinance": get_yfinance_etf_holdings,
+    },
+    # etf_peer_comparison_data
+    "get_etf_peer_comparison": {
+        "yfinance": get_yfinance_etf_peer_comparison,
     },
 }
 
