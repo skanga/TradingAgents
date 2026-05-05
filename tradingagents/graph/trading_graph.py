@@ -59,6 +59,9 @@ from tradingagents.agents.utils.agent_utils import (
     get_sector_relative_strength,
     get_intermarket_correlations,
     get_earnings_transcript_sentiment,
+    get_peer_comparison,
+    get_etf_holdings,
+    get_etf_peer_comparison,
 )
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
@@ -232,6 +235,14 @@ class TradingAgentsGraph:
                     get_insider_transactions,
                     get_congress_trades,
                     get_earnings_transcript_sentiment,
+                    # Cross-ticker comparisons (must be in this list — the
+                    # LLM is bound with these tools in the analyst factory,
+                    # so any tool the LLM can pick must also live here or
+                    # ToolNode rejects the call as "not a valid tool"
+                    # — observed regression on the 2026-05-05 SPY trial).
+                    get_peer_comparison,         # SEC fundamentals (single-company)
+                    get_etf_holdings,            # ETF sector weights + top-10
+                    get_etf_peer_comparison,     # ETF profile + returns + risk
                 ]
             ),
             "options": ToolNode(

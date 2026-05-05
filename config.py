@@ -58,7 +58,12 @@ def _build_tradingagents_config() -> dict:
     ]
     cfg["quick_think_llm_fallbacks"] = [
         "meta-llama/llama-3.3-70b-instruct:free",
-        "google/gemini-2.0-flash-exp:free",
+        # google/gemini-2.0-flash-exp:free was previously here; OpenRouter
+        # delisted it (404 "No endpoints found") on 2026-05-05. Replaced
+        # with the deepseek chat fallback used in the deep / structured
+        # role chains so the quick role has a different upstream provider
+        # than the llama-3.3 first fallback.
+        "deepseek/deepseek-chat-v3.1:free",
     ]
     cfg["structured_output_llm_fallbacks"] = [
         "deepseek/deepseek-chat-v3.1:free",

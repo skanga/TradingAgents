@@ -36,13 +36,21 @@ def _recoverable_exceptions() -> Tuple[Type[BaseException], ...]:
         "openai.APITimeoutError",
         "openai.APIConnectionError",
         "openai.InternalServerError",
+        # 404 from OpenRouter typically means "model was delisted" (e.g.
+        # google/gemini-2.0-flash-exp:free was dropped on 2026-05-05).
+        # Semantically "try a different model", same as a transient 5xx,
+        # even though it's a 4xx code. Without this the entire run dies
+        # whenever a single fallback in the chain becomes invalid.
+        "openai.NotFoundError",
         "anthropic.RateLimitError",
         "anthropic.APITimeoutError",
         "anthropic.APIConnectionError",
         "anthropic.InternalServerError",
+        "anthropic.NotFoundError",
         "google.api_core.exceptions.ResourceExhausted",
         "google.api_core.exceptions.ServiceUnavailable",
         "google.api_core.exceptions.DeadlineExceeded",
+        "google.api_core.exceptions.NotFound",
     )
     excs: List[Type[BaseException]] = []
     for dotted in candidates:
