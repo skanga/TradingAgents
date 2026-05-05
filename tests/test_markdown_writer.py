@@ -71,30 +71,33 @@ def test_every_pipeline_step_rendered_in_order():
         "Aggressive Risk Analyst",
         "Conservative Risk Analyst",
         "Neutral Risk Analyst",
-        "Final Trade Decision",
+        "Portfolio Manager Verdict",
     ]
     positions = [md.find(f"## {h}") for h in expected_order]
     assert all(p > 0 for p in positions), dict(zip(expected_order, positions))
     assert positions == sorted(positions), "sections must appear in pipeline order"
-    # The risk-debate verdict must NOT be emitted as its own section when
-    # final_trade_decision is present — it's identical content most runs.
+    # The risk-debate verdict must NOT be emitted as a separate section in
+    # addition to "Portfolio Manager Verdict" — they're the same content.
     assert "Portfolio Manager Verdict (risk debate)" not in md
+    # The legacy "Final Trade Decision" label is gone — the section is now
+    # named after the agent that produced it.
+    assert "## Final Trade Decision" not in md
 
 
-def test_final_decision_falls_back_to_risk_verdict_when_canonical_missing():
+def test_portfolio_verdict_falls_back_to_risk_verdict_when_canonical_missing():
     """If final_trade_decision is empty but the risk debate produced a
-    judge_decision, render that under 'Final Trade Decision' so the user
-    still sees a verdict — never both."""
+    judge_decision, render that under 'Portfolio Manager Verdict' so the
+    user still sees a verdict — never both."""
     state = dict(_full_state())
     state["final_trade_decision"] = ""
     md = render_markdown_report(
         ticker="AAPL", trade_date="2026-05-03",
         state=state, decision="HOLD",
     )
-    assert "## Final Trade Decision" in md
+    assert "## Portfolio Manager Verdict" in md
     assert "Portfolio Manager: Approve at 1%" in md
     # Still no duplicate "(risk debate)" section
-    assert md.count("## Final Trade Decision") == 1
+    assert md.count("## Portfolio Manager Verdict") == 1
 
 
 def test_no_decision_section_when_both_sources_missing():
@@ -106,7 +109,7 @@ def test_no_decision_section_when_both_sources_missing():
         ticker="AAPL", trade_date="2026-05-03",
         state=state, decision="HOLD",
     )
-    assert "## Final Trade Decision" not in md
+    assert "## Portfolio Manager Verdict" not in md
 
 
 def test_normalize_headings_shifts_to_min_level():
@@ -174,7 +177,7 @@ def test_partial_state_skips_missing_sections():
         state=state, decision="HOLD",
     )
     assert "## Market Analyst" in md
-    assert "## Final Trade Decision" in md
+    assert "## Portfolio Manager Verdict" in md
     # Sections that don't exist in state should not appear
     assert "## Bull Researcher" not in md
     assert "## Macro Backdrop" not in md

@@ -7,6 +7,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_sector_relative_strength,
     get_stock_data,
 )
+from tradingagents.agents.utils.quality_guard import strip_reasoning_leak
 from tradingagents.dataflows.config import get_config
 
 
@@ -83,7 +84,11 @@ Volume-Based Indicators:
         report = ""
 
         if len(result.tool_calls) == 0:
-            report = result.content
+            # Some free-tier models leak a paraphrase of the system prompt's
+            # stop-condition instruction into the head of their final answer
+            # (e.g. "Finally other: choose ... .We can stop."). Strip it
+            # before persisting; see quality_guard.strip_reasoning_leak.
+            report = strip_reasoning_leak(result.content)
 
         return {
             "messages": [result],

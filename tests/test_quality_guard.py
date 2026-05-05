@@ -10,6 +10,7 @@ from tradingagents.agents.utils.quality_guard import (
     invoke_chain_with_quality_retry,
     is_degenerate_report,
     make_unavailable_report,
+    strip_reasoning_leak,
 )
 
 
@@ -122,6 +123,53 @@ def test_unavailable_report_is_itself_not_degenerate(original):
     look like another degenerate response to anyone reading it."""
     out = make_unavailable_report(analyst_label="X Analyst", original=original)
     assert not is_degenerate_report(out)
+
+
+# --- strip_reasoning_leak --------------------------------------------------
+
+
+def test_strip_reasoning_leak_removes_motivating_spy_run_pattern():
+    """The exact leak observed in the May 4 SPY run, line 55."""
+    leaked = (
+        "Finally other: choose close_10_ema, macd, rsi, boll_ub, boll_lb, atr, vwma."
+        "We can stop.**FINAL TRANSACTION PROPOSAL: HOLD** – The SPY charts show a "
+        "neutral‑to‑bullish trend with moderate volatility..."
+    )
+    out = strip_reasoning_leak(leaked)
+    assert out.startswith("**FINAL TRANSACTION PROPOSAL: HOLD**")
+    assert "Finally other" not in out
+    assert "We can stop" not in out
+
+
+def test_strip_reasoning_leak_handles_clean_input_unchanged():
+    """No leak marker → content returned verbatim."""
+    clean = "## Market Analyst\n\nThe price action shows..."
+    assert strip_reasoning_leak(clean) is clean or strip_reasoning_leak(clean) == clean
+
+
+def test_strip_reasoning_leak_handles_empty_and_non_string():
+    assert strip_reasoning_leak("") == ""
+    assert strip_reasoning_leak(None) is None
+    # Non-strings pass through unmodified (callers shouldn't pass them, but
+    # the helper shouldn't crash if they do).
+    assert strip_reasoning_leak(42) == 42
+
+
+def test_strip_reasoning_leak_only_scans_first_chunk():
+    """A legitimate body that mentions 'we can stop' deep in the report
+    must not be truncated mid-content."""
+    head = "## Real Heading\n\n" + ("Substantive paragraph. " * 100)
+    body = head + "Finally we can stop here for clarity. More content."
+    out = strip_reasoning_leak(body)
+    # The 'we can stop' is past the 1000-char scan window → no strip
+    assert out.startswith("## Real Heading")
+
+
+def test_strip_reasoning_leak_strips_leading_whitespace_after_marker():
+    leaked = "We can stop.\n\n## Real Heading\n\nReal content."
+    out = strip_reasoning_leak(leaked)
+    assert out.startswith("## Real Heading")
+    assert "\n\n" not in out[: len("## Real Heading")]
 
 
 # --- invoke_chain_with_quality_retry --------------------------------------

@@ -100,12 +100,15 @@ def render_markdown_report(
                 sections.append((label, text))
         risk_verdict = _safe_str(risk.get("judge_decision"))
 
-    # Final decision: prefer ``final_trade_decision`` (the canonical, structured
-    # output); fall back to the raw risk-debate verdict only if the canonical
-    # field is empty. Emitting both produces near-identical duplicate sections.
+    # Portfolio Manager Verdict: prefer ``final_trade_decision`` (the
+    # canonical, structured output); fall back to the raw risk-debate
+    # verdict only if the canonical field is empty. Emitting both produces
+    # near-identical duplicate sections — the risk-debate judge_decision
+    # IS the Portfolio Manager's structured output. Section title names
+    # the agent so the synthesis attribution is unambiguous.
     decision_text = final_decision_text or risk_verdict
     if decision_text:
-        sections.append(("Final Trade Decision", decision_text))
+        sections.append(("Portfolio Manager Verdict", decision_text))
 
     for title, content in sections:
         parts.append(f"## {title}\n")

@@ -41,6 +41,40 @@ _STRUCTURE_RE = re.compile(
 )
 
 
+def strip_reasoning_leak(content: str) -> str:
+    """Strip a leaked LLM reasoning-trace prefix from ``content``.
+
+    Some LLMs (notably free-tier OpenRouter models) paraphrase the system
+    prompt's "knows to stop" instruction at the head of their final answer
+    instead of jumping straight into the report. The motivating example
+    came from a SPY run where the Market Analyst's output opened with::
+
+        Finally other: choose close_10_ema, macd, rsi, ... .We can stop.
+        **FINAL TRANSACTION PROPOSAL: HOLD** – ...
+
+    The phrase ``"We can stop"`` is a direct paraphrase of the analyst
+    system prompt's *"so the team knows to stop"* instruction and is the
+    most reliable marker — none of our reports legitimately use it. When
+    found in the first 1000 characters, this helper drops everything up
+    to (and including) that marker plus any leading whitespace.
+
+    No marker → ``content`` unchanged, so the helper is safe to apply
+    unconditionally to any analyst output.
+    """
+    if not isinstance(content, str) or not content:
+        return content
+    head = content[:1000]
+    for marker in ("We can stop.", "we can stop.", "We can stop", "we can stop"):
+        idx = head.find(marker)
+        if idx == -1:
+            continue
+        end = idx + len(marker)
+        while end < len(content) and content[end] in " \t\n\r":
+            end += 1
+        return content[end:]
+    return content
+
+
 def is_degenerate_report(report: object) -> bool:
     """Return ``True`` when ``report`` looks like a failed LLM final answer.
 
@@ -127,7 +161,7 @@ def invoke_chain_with_quality_retry(
         # Mid-conversation tool call; not a final answer to evaluate.
         return result, ""
 
-    report = getattr(result, "content", "") or ""
+    report = strip_reasoning_leak(getattr(result, "content", "") or "")
     if not is_degenerate_report(report):
         return result, report
 
@@ -137,7 +171,7 @@ def invoke_chain_with_quality_retry(
         len(report),
     )
     retry_result = chain.invoke(list(messages) + [("user", retry_user_prompt)])
-    retry_content = getattr(retry_result, "content", "") or ""
+    retry_content = strip_reasoning_leak(getattr(retry_result, "content", "") or "")
     retry_has_tools = bool(getattr(retry_result, "tool_calls", None))
 
     if not retry_has_tools and not is_degenerate_report(retry_content):
