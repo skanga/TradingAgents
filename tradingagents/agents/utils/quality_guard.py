@@ -158,27 +158,64 @@ def invoke_chain_with_quality_retry(
     *,
     analyst_label: str,
     retry_user_prompt: str = RETRY_USER_PROMPT,
+    max_tool_rounds: Any = None,
 ) -> Tuple[Any, str]:
     """Invoke ``chain.invoke(messages)`` with one retry on degenerate output.
 
     Behaviour:
 
-    - If the result still requests tool calls, return it verbatim with
-      an empty report — the LangGraph supervisor will route to ToolNode
-      and call this analyst again on the next turn.
+    - If the result still requests tool calls AND we have headroom under
+      ``max_tool_rounds``, return it verbatim with an empty report — the
+      LangGraph supervisor will route to ToolNode and call this analyst
+      again on the next turn.
+    - If the result still requests tool calls AND we are at or over the
+      cap, the conditional logic is about to force-terminate this
+      analyst — substitute :func:`make_unavailable_report` so downstream
+      sees a coherent placeholder instead of empty content. (Without
+      this branch the empty string propagates to the markdown writer
+      which silently skips the section, motivating the
+      2026-05-05 trial regression where Market Analyst sections went
+      missing for both SPY and AAPL.)
     - Otherwise, capture ``result.content`` as the report. If it is
       degenerate, append ``retry_user_prompt`` and re-invoke the chain
       once. If the retry also produces a degenerate answer (or returns
-      tool calls), substitute :func:`make_unavailable_report` so
-      downstream agents see a coherent placeholder.
+      tool calls), substitute the unavailable placeholder.
 
     Returns ``(message_to_append_to_state, report_string)``. The caller
     is responsible for returning these to the LangGraph state.
+
+    ``max_tool_rounds=None`` disables the cap-aware substitution path
+    (the helper behaves exactly as before for callers that don't want
+    that semantics).
     """
     result = chain.invoke(messages)
 
     if getattr(result, "tool_calls", None):
-        # Mid-conversation tool call; not a final answer to evaluate.
+        # Mid-conversation tool call. Did this round just push us over
+        # the cap? Count tool-bearing AIMessages in the input plus this
+        # new result; if total >= cap, conditional_logic will route to
+        # Msg Clear next, and the empty report we'd otherwise return
+        # would propagate to state and silently disappear from the
+        # rendered report.
+        if isinstance(max_tool_rounds, int) and max_tool_rounds > 0:
+            prior_rounds = sum(
+                1 for m in messages
+                if getattr(m, "tool_calls", None)
+            )
+            if prior_rounds + 1 >= max_tool_rounds:
+                logger.warning(
+                    "%s would be force-terminated by tool-round cap "
+                    "(%d rounds); substituting unavailable placeholder.",
+                    analyst_label, max_tool_rounds,
+                )
+                placeholder = make_unavailable_report(
+                    analyst_label=analyst_label,
+                    original=(
+                        f"force-terminated after {prior_rounds + 1} tool-"
+                        f"calling rounds without producing a final answer"
+                    ),
+                )
+                return result, placeholder
         return result, ""
 
     report = strip_reasoning_leak(getattr(result, "content", "") or "")

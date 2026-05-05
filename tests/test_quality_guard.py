@@ -275,3 +275,48 @@ def test_invoke_substitutes_placeholder_when_retry_returns_tool_calls():
     assert msg is bad
     assert "News Analyst — output unavailable" in report
     assert chain.invoke.call_count == 2
+
+
+def test_invoke_returns_empty_report_below_cap_with_tool_calls():
+    """Below the cap, tool-calling rounds should still return an empty
+    report so LangGraph routes through ToolNode for another iteration.
+    The cap-aware substitution must not fire prematurely."""
+    needs_tool = _ai("", tool_calls=[{"name": "get_x"}])
+    chain = _chain(needs_tool)
+    # 3 prior tool-bearing AIMessages in messages; cap=12 → plenty of room
+    prior = [_ai("", tool_calls=[{"name": "x"}]) for _ in range(3)]
+    msg, report = invoke_chain_with_quality_retry(
+        chain, prior, analyst_label="Market Analyst", max_tool_rounds=12,
+    )
+    assert msg is needs_tool
+    assert report == ""
+
+
+def test_invoke_substitutes_placeholder_when_about_to_hit_round_cap():
+    """The motivating SPY/AAPL Market Analyst regression: LLM keeps
+    requesting tools, conditional_logic's tool-round cap is about to
+    force-terminate, and without this branch the empty report propagates
+    silently to the rendered output."""
+    needs_tool = _ai("", tool_calls=[{"name": "get_x"}])
+    chain = _chain(needs_tool)
+    # 11 prior tool-bearing rounds + this 12th call hits cap of 12
+    prior = [_ai("", tool_calls=[{"name": "x"}]) for _ in range(11)]
+    msg, report = invoke_chain_with_quality_retry(
+        chain, prior, analyst_label="Market Analyst", max_tool_rounds=12,
+    )
+    assert msg is needs_tool
+    assert "Market Analyst — output unavailable" in report
+    assert "force-terminated after 12 tool-calling rounds" in report
+
+
+def test_invoke_cap_only_substitutes_when_max_tool_rounds_provided():
+    """Backward compat: callers that don't pass max_tool_rounds get the
+    pre-cap behaviour (empty report on tool calls, no substitution)."""
+    needs_tool = _ai("", tool_calls=[{"name": "get_x"}])
+    chain = _chain(needs_tool)
+    prior = [_ai("", tool_calls=[{"name": "x"}]) for _ in range(11)]
+    msg, report = invoke_chain_with_quality_retry(
+        chain, prior, analyst_label="Market Analyst",
+        # max_tool_rounds intentionally omitted
+    )
+    assert report == ""

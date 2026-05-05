@@ -79,14 +79,16 @@ Volume-Based Indicators:
 
         chain = prompt | llm.bind_tools(tools)
 
-        # Use the shared retry helper: applies strip_reasoning_leak to the
-        # final content, retries once on degenerate output (motivating
-        # case: a free-tier model that emitted "Need more indicators; due
-        # to time limit may stop.**FINAL TRANSACTION PROPOSAL:** _Awaiting
-        # full indicator set..._" instead of a real Market Analyst report
-        # — the retry path catches this where bare strip cannot).
+        # Use the shared retry helper: applies strip_reasoning_leak,
+        # retries once on degenerate output, and (with max_tool_rounds
+        # passed) substitutes a placeholder when the conditional logic
+        # is about to force-terminate the analyst — without that the
+        # empty report silently disappears from the rendered output.
         final_message, report = invoke_chain_with_quality_retry(
-            chain, state["messages"], analyst_label="Market Analyst"
+            chain,
+            state["messages"],
+            analyst_label="Market Analyst",
+            max_tool_rounds=get_config().get("max_tool_rounds_per_analyst"),
         )
 
         return {

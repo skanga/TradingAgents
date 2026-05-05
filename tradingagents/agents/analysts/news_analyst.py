@@ -61,9 +61,13 @@ def create_news_analyst(llm):
         chain = prompt | llm.bind_tools(tools)
 
         # Retry once on degenerate LLM output; substitute an "unavailable"
-        # placeholder if the retry also fails. See quality_guard for details.
+        # placeholder if the retry also fails OR if the analyst is about
+        # to be force-terminated by the conditional-logic round cap.
         final_message, report = invoke_chain_with_quality_retry(
-            chain, state["messages"], analyst_label="News Analyst"
+            chain,
+            state["messages"],
+            analyst_label="News Analyst",
+            max_tool_rounds=get_config().get("max_tool_rounds_per_analyst"),
         )
 
         return {

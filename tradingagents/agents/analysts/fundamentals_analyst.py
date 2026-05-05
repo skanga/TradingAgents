@@ -93,13 +93,17 @@ def create_fundamentals_analyst(llm):
 
         chain = prompt | llm.bind_tools(tools)
 
-        # Retry once on degenerate LLM output (the motivating case: a free-tier
+        # Retry once on degenerate LLM output (motivating case: a free-tier
         # model that returned literally "Call correct." instead of a real
-        # Fundamentals report). If retry also fails, the helper substitutes an
-        # honest "unavailable" placeholder so downstream debaters see coherent
-        # signal instead of garbage.
+        # Fundamentals report). If retry also fails, the helper substitutes
+        # an honest "unavailable" placeholder. ``max_tool_rounds`` lets the
+        # helper substitute a placeholder even when the LLM gets force-
+        # terminated by the conditional-logic round cap.
         final_message, report = invoke_chain_with_quality_retry(
-            chain, state["messages"], analyst_label="Fundamentals Analyst"
+            chain,
+            state["messages"],
+            analyst_label="Fundamentals Analyst",
+            max_tool_rounds=get_config().get("max_tool_rounds_per_analyst"),
         )
 
         return {
