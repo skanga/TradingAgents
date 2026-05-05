@@ -14,7 +14,7 @@ from .conditional_logic import ConditionalLogic
 logger = logging.getLogger(__name__)
 
 
-def _with_checkpoint(name: str, node_fn: Callable) -> Callable:
+def _with_checkpoint(name: str, node_fn: Any) -> Callable:
     """Wrap a graph node to emit ENTER/EXIT checkpoint log lines.
 
     Default httpx INFO output drowns the run log in HTTP-request traces with
@@ -26,7 +26,15 @@ def _with_checkpoint(name: str, node_fn: Callable) -> Callable:
     Tool nodes and Msg-Clear nodes are wrapped too — every entry into an
     analyst's node typically follows a tool-node round-trip, so those
     checkpoints make tool-calling activity visible as well.
+
+    ``node_fn`` may be a plain callable (analyst factories return one) or
+    a Runnable like ``ToolNode`` (which is a Pydantic class with an
+    ``.invoke`` method but no ``__call__``). Calling a Runnable directly
+    raises ``TypeError: 'ToolNode' object is not callable``; route those
+    through ``.invoke`` instead. Plain callables stay on the direct path.
     """
+
+    is_runnable = hasattr(node_fn, "invoke") and not callable(node_fn)
 
     def wrapped(state, *args, **kwargs):
         ticker = "?"
@@ -35,7 +43,10 @@ def _with_checkpoint(name: str, node_fn: Callable) -> Callable:
         logger.info("ENTER %s | %s", name, ticker)
         t0 = time.monotonic()
         try:
-            result = node_fn(state, *args, **kwargs)
+            if is_runnable:
+                result = node_fn.invoke(state, *args, **kwargs)
+            else:
+                result = node_fn(state, *args, **kwargs)
         except Exception as e:
             logger.error(
                 "FAIL  %s | %s | %.1fs | %s: %s",

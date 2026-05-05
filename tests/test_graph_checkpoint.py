@@ -100,3 +100,39 @@ def test_wrapper_preserves_return_value():
     sentinel = {"investment_plan": "buy aapl 1pct"}
     wrapped = _with_checkpoint("Research Manager", lambda state: sentinel)
     assert wrapped({"company_of_interest": "AAPL"}) is sentinel
+
+
+def test_wrapper_routes_runnable_node_through_invoke(caplog):
+    """LangGraph's ToolNode is a Pydantic Runnable: has ``.invoke`` but no
+    ``__call__``. Calling it as a plain function raises
+    ``TypeError: 'ToolNode' object is not callable``. The wrapper must
+    dispatch Runnable-shaped nodes through ``.invoke`` instead.
+
+    Regression test for the SPY+AAPL trial run that failed with that
+    exact TypeError on the first tool node entry."""
+    caplog.set_level(logging.INFO, logger="tradingagents.graph.setup")
+
+    class _RunnableNode:
+        """Mimics the surface that ToolNode exposes to LangGraph: an
+        ``invoke`` method, no ``__call__``. ``callable(_RunnableNode())``
+        is False, matching real ToolNode behaviour."""
+
+        def __init__(self):
+            self.invoke_calls = 0
+
+        def invoke(self, state, *args, **kwargs):
+            self.invoke_calls += 1
+            return {"messages": [{"role": "tool", "content": "ok"}]}
+
+    node = _RunnableNode()
+    assert not callable(node), "fixture must mirror ToolNode (not callable)"
+
+    wrapped = _with_checkpoint("tools_market", node)
+    result = wrapped({"company_of_interest": "SPY"})
+
+    assert node.invoke_calls == 1
+    assert result == {"messages": [{"role": "tool", "content": "ok"}]}
+
+    messages = [r.message for r in caplog.records]
+    assert any(m.startswith("ENTER tools_market | SPY") for m in messages)
+    assert any(m.startswith("EXIT  tools_market | SPY") for m in messages)
