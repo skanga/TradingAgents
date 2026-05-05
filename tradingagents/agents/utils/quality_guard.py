@@ -64,7 +64,27 @@ def strip_reasoning_leak(content: str) -> str:
     if not isinstance(content, str) or not content:
         return content
     head = content[:1000]
-    for marker in ("We can stop.", "we can stop.", "We can stop", "we can stop"):
+    # Ordered most-specific first. Every marker here is a paraphrase of a
+    # system-prompt instruction and never appears in legitimate analyst
+    # report content. Adding generic words like "may stop" alone would
+    # falsely match phrases like "the Fed may stop hiking" — each marker
+    # includes context unique to the meta-instruction ("due to time
+    # limit", "knows to stop"). "due to time limit may stop" was
+    # emitted verbatim by gpt-oss-20b on the 2026-05-05 SPY run;
+    # "We can stop." is the canonical paraphrase of the system prompt's
+    # "knows to stop" stop-condition instruction.
+    # NOTE: each marker must terminate at a clear sentence boundary
+    # (period or end-of-phrase) so the strip ends in a clean place.
+    # "Finally other:" was *also* observed paired with "We can stop." in
+    # the May 4 SPY run, but "We can stop." appeared later in the same
+    # string and provides the right strip boundary; standalone
+    # "Finally other:" without a trailing period doesn't terminate
+    # cleanly and is intentionally not in this list.
+    for marker in (
+        "due to time limit may stop.",  # observed verbatim 2026-05-05
+        "due to time limit may stop",
+        "We can stop.", "we can stop.", "We can stop", "we can stop",
+    ):
         idx = head.find(marker)
         if idx == -1:
             continue

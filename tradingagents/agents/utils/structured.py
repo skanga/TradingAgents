@@ -58,11 +58,29 @@ def invoke_structured_or_freetext(
     invocations, a list of message dicts for chat models that take that
     shape). The same value is forwarded to the free-text path so the
     fallback sees the same input the structured call did.
+
+    When *both* the structured call and the free-text fallback produce
+    empty / whitespace-only content, returns a bracketed placeholder so
+    downstream agents and the renderer see a coherent failure signal
+    instead of an empty section. This was the silent failure mode that
+    sank the SPY 2026-05-05 Portfolio Manager run: the structured call
+    raised a Pydantic JSON-validation error (LLM emitted malformed JSON
+    stuck in a ``"\\n"`` loop), the free-text retry returned empty
+    content, and the empty string propagated to the markdown writer
+    which correctly skipped the section — but the user lost the
+    verdict entirely with no indication of why.
     """
     if structured_llm is not None:
         try:
             result = structured_llm.invoke(prompt)
-            return render(result)
+            rendered = render(result)
+            if rendered and rendered.strip():
+                return rendered
+            logger.warning(
+                "%s: structured-output succeeded but render produced empty "
+                "content; falling back to free text",
+                agent_name,
+            )
         except Exception as exc:
             logger.warning(
                 "%s: structured-output invocation failed (%s); retrying once as free text",
@@ -70,4 +88,17 @@ def invoke_structured_or_freetext(
             )
 
     response = plain_llm.invoke(prompt)
-    return response.content
+    content = getattr(response, "content", "") or ""
+    if content.strip():
+        return content
+
+    logger.error(
+        "%s: free-text fallback returned empty content; substituting "
+        "placeholder so downstream sees the failure.",
+        agent_name,
+    )
+    return (
+        f"[{agent_name} could not produce a verdict on this run: structured "
+        f"output failed and the free-text retry returned no content. "
+        f"Treat this section as missing.]"
+    )

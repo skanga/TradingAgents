@@ -172,6 +172,34 @@ def test_strip_reasoning_leak_strips_leading_whitespace_after_marker():
     assert "\n\n" not in out[: len("## Real Heading")]
 
 
+def test_strip_reasoning_leak_handles_due_to_time_limit_paraphrase():
+    """Observed verbatim on the 2026-05-05 SPY trial run, Market Analyst:
+    'Need more indicators; due to time limit may stop.**FINAL TRANSACTION
+    PROPOSAL:** _Awaiting full indicator set...'"""
+    leaked = (
+        "Need more indicators; due to time limit may stop."
+        "**FINAL TRANSACTION PROPOSAL:** _Awaiting full indicator set – "
+        "cannot finalize recommendation yet._"
+    )
+    out = strip_reasoning_leak(leaked)
+    assert out.startswith("**FINAL TRANSACTION PROPOSAL:**")
+    assert "Need more indicators" not in out
+    assert "due to time limit" not in out
+
+
+def test_strip_reasoning_leak_finally_other_works_when_paired_with_we_can_stop():
+    """Real 2026-05-04 SPY case: 'Finally other: ... .We can stop.' followed
+    by the report. The 'We can stop.' marker provides the clean boundary
+    even when 'Finally other:' is in the same string."""
+    leaked = (
+        "Finally other: choose close_10_ema, macd, rsi, boll_ub.We can stop."
+        "**FINAL TRANSACTION PROPOSAL: HOLD** – ..."
+    )
+    out = strip_reasoning_leak(leaked)
+    assert out.startswith("**FINAL TRANSACTION PROPOSAL: HOLD**")
+    assert "Finally other" not in out
+
+
 # --- invoke_chain_with_quality_retry --------------------------------------
 
 

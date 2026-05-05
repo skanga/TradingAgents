@@ -7,7 +7,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_sector_relative_strength,
     get_stock_data,
 )
-from tradingagents.agents.utils.quality_guard import strip_reasoning_leak
+from tradingagents.agents.utils.quality_guard import invoke_chain_with_quality_retry
 from tradingagents.dataflows.config import get_config
 
 
@@ -79,19 +79,18 @@ Volume-Based Indicators:
 
         chain = prompt | llm.bind_tools(tools)
 
-        result = chain.invoke(state["messages"])
-
-        report = ""
-
-        if len(result.tool_calls) == 0:
-            # Some free-tier models leak a paraphrase of the system prompt's
-            # stop-condition instruction into the head of their final answer
-            # (e.g. "Finally other: choose ... .We can stop."). Strip it
-            # before persisting; see quality_guard.strip_reasoning_leak.
-            report = strip_reasoning_leak(result.content)
+        # Use the shared retry helper: applies strip_reasoning_leak to the
+        # final content, retries once on degenerate output (motivating
+        # case: a free-tier model that emitted "Need more indicators; due
+        # to time limit may stop.**FINAL TRANSACTION PROPOSAL:** _Awaiting
+        # full indicator set..._" instead of a real Market Analyst report
+        # — the retry path catches this where bare strip cannot).
+        final_message, report = invoke_chain_with_quality_retry(
+            chain, state["messages"], analyst_label="Market Analyst"
+        )
 
         return {
-            "messages": [result],
+            "messages": [final_message],
             "market_report": report,
         }
 
