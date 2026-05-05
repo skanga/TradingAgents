@@ -144,6 +144,9 @@ class TradingAgentsGraph:
         self.conditional_logic = ConditionalLogic(
             max_debate_rounds=self.config["max_debate_rounds"],
             max_risk_discuss_rounds=self.config["max_risk_discuss_rounds"],
+            max_tool_rounds_per_analyst=self.config.get(
+                "max_tool_rounds_per_analyst", 12
+            ),
         )
         self.graph_setup = GraphSetup(
             role_llms=self.role_llms,

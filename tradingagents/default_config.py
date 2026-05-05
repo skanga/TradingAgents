@@ -58,6 +58,16 @@ DEFAULT_CONFIG = {
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
     "max_recur_limit": 100,
+    # Hard cap on tool-calling rounds within a single analyst node. The
+    # analyst loop is "LLM → tools → LLM → tools → ..." and is meant to
+    # terminate when the LLM stops requesting tools. Free-tier models
+    # occasionally fail to terminate (observed: 33 rounds on AAPL Market
+    # Analyst before LangGraph's recursion limit killed the whole run).
+    # When this cap is hit, conditional_logic forces the analyst to its
+    # Msg-Clear node, surrendering whatever final answer the LLM has
+    # produced. Set high enough that legitimate analyses fit comfortably:
+    # the largest natural ceiling is Fundamentals at ~8 tools.
+    "max_tool_rounds_per_analyst": 12,
 
     # --- Data vendor configuration ---
     # Category-level configuration (default vendor for all tools in category)
