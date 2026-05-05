@@ -72,6 +72,7 @@ DEFAULT_CONFIG = {
         "transcript_data":    "motley_fool",  # Options: motley_fool
         "sector_data":        "yfinance",     # Options: yfinance
         "peer_comparison_data": "lambda_finance", # Options: lambda_finance (only vendor today)
+        "etf_holdings_data":   "yfinance",     # Options: yfinance (only vendor today)
     },
     # Tool-level configuration (takes precedence over category-level).
     # Use this to override the vendor for a single tool without changing

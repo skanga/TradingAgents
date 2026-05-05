@@ -34,6 +34,7 @@ from .lambda_finance_sec import (
 from .lambda_finance_compare import (
     get_peer_comparison as get_lambda_finance_peer_comparison,
 )
+from .etf_holdings import get_etf_holdings as get_yfinance_etf_holdings
 from .options_flow import (
     get_options_summary as get_yfinance_options_summary,
     get_iv_rank as get_yfinance_iv_rank,
@@ -117,6 +118,12 @@ TOOLS_CATEGORIES = {
         "description": "Cross-ticker fundamentals comparison for one fiscal year",
         "tools": [
             "get_peer_comparison",
+        ],
+    },
+    "etf_holdings_data": {
+        "description": "ETF sector weights, top holdings, and concentration metric",
+        "tools": [
+            "get_etf_holdings",
         ],
     },
 }
@@ -207,6 +214,10 @@ VENDOR_METHODS = {
     # peer_comparison_data
     "get_peer_comparison": {
         "lambda_finance": get_lambda_finance_peer_comparison,
+    },
+    # etf_holdings_data
+    "get_etf_holdings": {
+        "yfinance": get_yfinance_etf_holdings,
     },
 }
 

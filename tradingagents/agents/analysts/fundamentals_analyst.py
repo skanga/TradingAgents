@@ -5,6 +5,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_cashflow,
     get_congress_trades,
     get_earnings_transcript_sentiment,
+    get_etf_holdings,
     get_fundamentals,
     get_income_statement,
     get_insider_transactions,
@@ -29,6 +30,7 @@ def create_fundamentals_analyst(llm):
             get_congress_trades,
             get_earnings_transcript_sentiment,
             get_peer_comparison,
+            get_etf_holdings,
         ]
 
         system_message = (
@@ -39,6 +41,7 @@ def create_fundamentals_analyst(llm):
             + " Also call `get_congress_trades` for STOCK Act disclosures from members of Congress. Treat congressional purchases — especially clusters of buyers across both chambers — as a noteworthy informational signal: legislators sit on committees with policy oversight that can move sectors. Surface filers who chair or sit on committees relevant to the company's business (e.g. Armed Services for defense, Energy & Commerce for healthcare/telecom, Financial Services for banks). Disclosed amounts are ranges, so quote the range; do not invent point estimates."
             + " Call `get_earnings_transcript_sentiment` to read the qualitative tone of management's most recent earnings call. The numeric financial statements tell you WHAT the company reported; the transcript sentiment tells you HOW management is positioning what's coming next. Pay particular attention to: (a) divergence between Prepared Remarks and Q&A — a positive scripted message paired with a guarded Q&A is a yellow flag; (b) elevated hedge-word density (≥ 8 per 1k words is meaningful); (c) elevated Q&A deflection rate (≥ 4 per 1k words means management is dodging specifics). Do NOT downgrade a strong fundamental picture purely on hedging language — but DO surface the divergence so the trader can weigh it."
             + " For large-cap equity tickers (single companies), call `get_peer_comparison` once to benchmark against 2-4 sector peers on revenue, net income, gross profit, and operating income for the most recent complete fiscal year. Pick peers from the same sector and roughly comparable scale (e.g. AAPL → MSFT, GOOGL, AMZN; JPM → BAC, WFC, C; NVDA → AMD, INTC, AVGO). Surface the resulting table verbatim in your report under a 'Peer Comparison' subsection and add 1-2 sentences interpreting where the company leads or lags. SKIP this tool for ETFs and index trackers (SPY, QQQ, etc.) — peer comparison is not meaningful when the 'company' is itself a basket. If the tool returns a bracketed unavailable string, note it and continue."
+            + " For ETFs, index trackers, or mutual fund tickers (SPY, QQQ, IWM, VTI, etc.), call `get_etf_holdings` once instead of `get_peer_comparison`. It returns asset-class breakdown, sector weights, top-10 holdings with concentration metric, and category/family metadata. Surface the resulting tables verbatim in your report under an 'ETF Holdings' subsection and add 1-2 sentences interpreting concentration risk (top-10 weight) and sector tilt vs. a broad-market benchmark. Only call `get_etf_holdings` when the ticker is clearly a fund — never for single-company stocks; it will return an unavailable string in that case."
             + " REQUIRED OUTPUT STRUCTURE — your final report MUST include all of the following, even if some sections are short:"
             " (1) at least one section heading; (2) numeric values pulled from the tool outputs (revenue, margins, FCF, EPS — cite the tool that supplied each figure, e.g. 'Per get_income_statement: revenue $X.XB FY2025'); (3) a closing markdown summary table with the key bull/bear factors. If a tool returned a bracketed-failure string (e.g. '[fundamental data unavailable: ...]'), explicitly state that source was unavailable and continue with what you have — never fall silent or emit a one-line response."
             " Source citations are mandatory: every numeric claim must reference the tool that produced it; do not invent figures that no tool returned."

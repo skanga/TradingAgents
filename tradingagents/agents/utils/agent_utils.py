@@ -38,6 +38,9 @@ from tradingagents.agents.utils.transcript_tools import (
 from tradingagents.agents.utils.peer_comparison_tools import (
     get_peer_comparison,
 )
+from tradingagents.agents.utils.etf_holdings_tools import (
+    get_etf_holdings,
+)
 
 
 def get_language_instruction() -> str:
