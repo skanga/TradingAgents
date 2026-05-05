@@ -31,6 +31,9 @@ from .lambda_finance_sec import (
     get_income_statement as get_lambda_finance_income_statement,
     get_balance_sheet as get_lambda_finance_balance_sheet,
 )
+from .lambda_finance_compare import (
+    get_peer_comparison as get_lambda_finance_peer_comparison,
+)
 from .options_flow import (
     get_options_summary as get_yfinance_options_summary,
     get_iv_rank as get_yfinance_iv_rank,
@@ -109,6 +112,12 @@ TOOLS_CATEGORIES = {
             "get_sector_relative_strength",
             "get_intermarket_correlations",
         ]
+    },
+    "peer_comparison_data": {
+        "description": "Cross-ticker fundamentals comparison for one fiscal year",
+        "tools": [
+            "get_peer_comparison",
+        ],
     },
 }
 
@@ -194,6 +203,10 @@ VENDOR_METHODS = {
     },
     "get_intermarket_correlations": {
         "yfinance": get_yfinance_intermarket_correlations,
+    },
+    # peer_comparison_data
+    "get_peer_comparison": {
+        "lambda_finance": get_lambda_finance_peer_comparison,
     },
 }
 

@@ -35,6 +35,9 @@ from tradingagents.agents.utils.sector_tools import (
 from tradingagents.agents.utils.transcript_tools import (
     get_earnings_transcript_sentiment,
 )
+from tradingagents.agents.utils.peer_comparison_tools import (
+    get_peer_comparison,
+)
 
 
 def get_language_instruction() -> str:
