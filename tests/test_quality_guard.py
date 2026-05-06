@@ -187,6 +187,36 @@ def test_strip_reasoning_leak_handles_due_to_time_limit_paraphrase():
     assert "due to time limit" not in out
 
 
+def test_strip_reasoning_leak_handles_need_toolname_paraphrase():
+    """Observed verbatim on the 2026-05-05 SPY Market Analyst:
+    'Need atr.## SPY Technical Analysis Report (2026-05-05) ...'"""
+    leaked = "Need atr.## SPY Technical Analysis Report\n\nReal content here."
+    out = strip_reasoning_leak(leaked)
+    assert out.startswith("## SPY Technical Analysis Report")
+    assert "Need atr" not in out
+
+
+def test_strip_reasoning_leak_handles_need_multiple_toolnames():
+    """'Need boll, atr.' was the AAPL Market Analyst variant."""
+    leaked = "Need boll, atr.\n\n## Real Report\n\nBody."
+    out = strip_reasoning_leak(leaked)
+    assert out.startswith("## Real Report")
+    assert "Need boll" not in out
+
+
+def test_strip_reasoning_leak_does_not_match_legitimate_need_phrasing():
+    """The 'Need <toolname>.' pattern is deliberately constrained to short
+    alphanumeric+comma+space content followed by a period so it can't
+    swallow legitimate report sentences like 'Need to monitor the Fed.'"""
+    legit = "Need to monitor the Fed and the upcoming jobs report next month."
+    out = strip_reasoning_leak(legit)
+    # Legitimate sentence stays intact (the words after "Need" don't match
+    # the constrained pattern — they include "to" which is fine, but the
+    # period boundary lands at the END of the sentence, well past the
+    # 40-char cap, so the regex doesn't match).
+    assert out == legit
+
+
 def test_strip_reasoning_leak_finally_other_works_when_paired_with_we_can_stop():
     """Real 2026-05-04 SPY case: 'Finally other: ... .We can stop.' followed
     by the report. The 'We can stop.' marker provides the clean boundary

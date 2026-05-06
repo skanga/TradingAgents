@@ -31,6 +31,15 @@ logger = logging.getLogger(__name__)
 # already longer than this.
 _MIN_REPORT_CHARS = 200
 
+
+# Paraphrase pattern observed on multiple Market Analyst runs: the LLM
+# emits "Need <tool_name(s)>." as a stand-in for "I would call more tools
+# but I'm out of time" — followed by the actual report. e.g.
+# "Need atr." (2026-05-05), "Need boll, atr." (2026-05-05).
+# Constrained to short alphanumeric+comma+space content so it can't
+# falsely match legitimate report text like "Need to monitor the Fed".
+_NEED_TOOLS_RE = re.compile(r"^\s*Need\s+[\w, ]{1,40}\.\s*", re.IGNORECASE)
+
 # Markdown-structure tells (any one passing means the report has form).
 _STRUCTURE_RE = re.compile(
     r"(?m)^"
@@ -63,6 +72,17 @@ def strip_reasoning_leak(content: str) -> str:
     """
     if not isinstance(content, str) or not content:
         return content
+
+    # Strip the "Need <tool_name(s)>." paraphrase first if it leads the
+    # content. This pattern was observed on multiple SPY Market Analyst
+    # runs (2026-05-05): the LLM emits something like "Need atr." as
+    # the head of its final answer before producing the real report.
+    # Apply before the literal-marker scan because the trailing period
+    # provides a clean strip boundary that the literal scan can't match.
+    m = _NEED_TOOLS_RE.match(content)
+    if m:
+        content = content[m.end():]
+
     head = content[:1000]
     # Ordered most-specific first. Every marker here is a paraphrase of a
     # system-prompt instruction and never appears in legitimate analyst
