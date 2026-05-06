@@ -52,6 +52,16 @@ Volume-Based Indicators:
 - Select indicators that provide diverse and complementary information. Avoid redundancy (e.g., do not select both rsi and stochrsi). Also briefly explain why they are suitable for the given market context. When you tool call, please use the exact name of the indicators provided above as they are defined parameters, otherwise your call will fail. Please make sure to call get_stock_data first to retrieve the CSV that is needed to generate indicators. Then use get_indicators with the specific indicator names. Write a very detailed and nuanced report of the trends you observe. Provide specific, actionable insights with supporting evidence to help traders make informed decisions."""
             + """ After the single-ticker technical view, also call `get_sector_relative_strength` and `get_intermarket_correlations` to contextualise the chart in its sector and risk-asset environment. A bullish chart in a sector that is losing relative strength to SPY is a much weaker setup than the same chart in a sector enjoying a tailwind; explicitly call out whether the technical signal is being supported or contradicted by the sector backdrop. Likewise, surface any |correlation| ≥ 0.5 to gold, oil, crypto, USD or VIX as a hidden sensitivity the trader should know about."""
             + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
+            #
+            # === TOOL-CALL DISCIPLINE — keep total tool rounds ≤ 4 ===
+            #
+            + "\n\nTOOL-CALL DISCIPLINE — your analyst loop has a hard cap of 12 tool-calling rounds. To stay well under that, follow this exact pattern:"
+            + "\n  1. Call `get_stock_data` ONCE with the ticker."
+            + "\n  2. Call `get_indicators` ONCE with ALL chosen indicator names as a single comma-separated string (e.g. `'close_50_sma,close_200_sma,close_10_ema,macd,rsi,boll_ub,boll_lb,atr,vwma'`). The tool batches them; calling it 8 times sequentially burns the round budget."
+            + "\n  3. Call `get_sector_relative_strength` ONCE."
+            + "\n  4. Call `get_intermarket_correlations` ONCE."
+            + "\n  5. Then produce the FINAL written report — do not call any tool again."
+            + "\nIf you need an indicator you forgot, request it WITHIN the comma-separated list on your single `get_indicators` call rather than making a follow-up call."
             + get_language_instruction()
         )
 

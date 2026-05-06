@@ -47,7 +47,7 @@ def create_fundamentals_analyst(llm):
             + "\n  • For ETFs DO NOT call `get_peer_comparison`, `get_balance_sheet`, `get_cashflow`, or `get_income_statement` — they query SEC company filings and will return unavailable for funds."
             + "\n  • Insider / congress / transcript tools are usually irrelevant for ETFs (no insiders, no earnings calls)."
             + "\n\nETF peer-picking hints: SPY → QQQ, IWM, DIA (broad-market); QQQ → XLK, VGT, SPYG (tech tilts); IWM → IJR, VB (small-cap); sector ETFs → other major sector ETFs."
-            + "\nCompany peer-picking hints: same sector, comparable scale (AAPL → MSFT, GOOGL, AMZN; JPM → BAC, WFC, C; NVDA → AMD, INTC, AVGO)."
+            + "\nCompany peer-picking hints: same sector, comparable scale (AAPL → MSFT, GOOGL, AMZN; JPM → BAC, WFC, C; NVDA → AMD, INTC, AVGO; TSLA → F, GM, RIVN, LCID; AMZN → WMT, COST, TGT; XOM → CVX, COP, BP). The principle is *industry peers*, not just 'other big stocks'."
             #
             # === STEP 2 — TOOL-SPECIFIC INTERPRETATION ===
             #
