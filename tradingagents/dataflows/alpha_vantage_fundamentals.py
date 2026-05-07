@@ -1,22 +1,17 @@
 import json
+from typing import Any
 
 from .alpha_vantage_common import _make_api_request
 
 
-def _filter_reports_by_date(result, curr_date: str):
-    """Drop annual/quarterly reports dated after curr_date to prevent look-ahead.
+def _filter_reports_by_date(result: dict[str, Any], curr_date: str | None) -> dict[str, Any]:
+    """Filter annualReports/quarterlyReports to exclude entries after curr_date.
 
     ``_make_api_request`` returns the fundamentals payload as a JSON string, so
     parse, filter, and re-serialize. A non-JSON body or an unset ``curr_date`` is
     returned unchanged.
     """
-    if not curr_date or not isinstance(result, str):
-        return result
-    try:
-        payload = json.loads(result)
-    except json.JSONDecodeError:
-        return result
-    if not isinstance(payload, dict):
+    if not curr_date:
         return result
     for key in ("annualReports", "quarterlyReports"):
         if isinstance(payload.get(key), list):
@@ -27,7 +22,19 @@ def _filter_reports_by_date(result, curr_date: str):
     return json.dumps(payload)
 
 
-def get_fundamentals(ticker: str, curr_date: str = None) -> str:
+def _filter_statement_response(response_text: str, curr_date: str | None) -> str:
+    if not curr_date:
+        return response_text
+    try:
+        result = json.loads(response_text)
+    except json.JSONDecodeError:
+        return response_text
+    if not isinstance(result, dict):
+        return response_text
+    return json.dumps(_filter_reports_by_date(result, curr_date))
+
+
+def get_fundamentals(ticker: str, curr_date: str | None = None) -> str:
     """
     Retrieve comprehensive fundamental data for a given ticker symbol using Alpha Vantage.
 
@@ -45,20 +52,24 @@ def get_fundamentals(ticker: str, curr_date: str = None) -> str:
     return _make_api_request("OVERVIEW", params)
 
 
-def get_balance_sheet(ticker: str, freq: str = "quarterly", curr_date: str = None):
+def get_balance_sheet(
+    ticker: str, freq: str = "quarterly", curr_date: str | None = None
+) -> str:
     """Retrieve balance sheet data for a given ticker symbol using Alpha Vantage."""
-    result = _make_api_request("BALANCE_SHEET", {"symbol": ticker})
-    return _filter_reports_by_date(result, curr_date)
+    response_text = _make_api_request("BALANCE_SHEET", {"symbol": ticker})
+    return _filter_statement_response(response_text, curr_date)
 
 
-def get_cashflow(ticker: str, freq: str = "quarterly", curr_date: str = None):
+def get_cashflow(ticker: str, freq: str = "quarterly", curr_date: str | None = None) -> str:
     """Retrieve cash flow statement data for a given ticker symbol using Alpha Vantage."""
-    result = _make_api_request("CASH_FLOW", {"symbol": ticker})
-    return _filter_reports_by_date(result, curr_date)
+    response_text = _make_api_request("CASH_FLOW", {"symbol": ticker})
+    return _filter_statement_response(response_text, curr_date)
 
 
-def get_income_statement(ticker: str, freq: str = "quarterly", curr_date: str = None):
+def get_income_statement(
+    ticker: str, freq: str = "quarterly", curr_date: str | None = None
+) -> str:
     """Retrieve income statement data for a given ticker symbol using Alpha Vantage."""
-    result = _make_api_request("INCOME_STATEMENT", {"symbol": ticker})
-    return _filter_reports_by_date(result, curr_date)
+    response_text = _make_api_request("INCOME_STATEMENT", {"symbol": ticker})
+    return _filter_statement_response(response_text, curr_date)
 

@@ -17,8 +17,12 @@ dependencies = [
     "langchain-openai>=0.3.23",
     "langgraph>=0.4.8",
     "langgraph-checkpoint-sqlite>=2.0.0",
+    "markdown-it-py>=3.0.0",
+    "matplotlib>=3.10.0",
     "pandas>=2.3.0",
     "parsel>=1.10.0",
+    "pydantic>=2.0.0",
+    "python-dateutil>=2.9.0",
     "python-dotenv>=1.0.0",
     "pytz>=2025.2",
     "questionary>=2.1.0",
@@ -46,17 +50,14 @@ bedrock = [
 ]
 
 [project.optional-dependencies]
-gui = [
-    "streamlit>=1.36.0",
-    "markdown>=3.5",
-    "xhtml2pdf>=0.2.13",
-]
-service = [
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.30.0",
-    "websockets>=13.0",
-    "markdown>=3.5",
-    "xhtml2pdf>=0.2.13",
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
+    "pytest-timeout>=2.3.0",
+    "types-python-dateutil>=2.9.0.20241206",
+    "types-requests>=2.32.0",
 ]
 
 [project.scripts]
@@ -69,10 +70,11 @@ include = ["tradingagents*", "cli*", "gui*", "service*"]
 
 [tool.setuptools.package-data]
 cli = ["static/*"]
+tradingagents = ["agents/prompts/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers -p no:cacheprovider"
 markers = [
     "unit: fast isolated unit tests",
     "integration: tests requiring external services",
@@ -82,23 +84,15 @@ filterwarnings = [
     "ignore::DeprecationWarning",
 ]
 
-[tool.ruff]
-line-length = 100
-target-version = "py310"
-extend-exclude = ["results", "worklog"]
+[tool.mypy]
+exclude = "^(build|dist|\\.venv|tradingagents/(Lib|Scripts|Include))/"
+disable_error_code = ["import-untyped", "import-not-found"]
 
-[tool.ruff.lint]
-# Standard "good defaults" rule set (pyflakes + pycodestyle + isort + bugbear +
-# pyupgrade + comprehensions/simplify). Line length (E501) and layout are owned
-# by the formatter; whole-repo `ruff format` adoption is deferred until the
-# open-PR backlog clears, to avoid mass merge conflicts.
-select = ["E", "W", "F", "I", "B", "UP", "C4", "SIM"]
-ignore = ["E501"]
-
-[tool.ruff.lint.per-file-ignores]
-"**/__init__.py" = ["F401"]   # intentional re-exports
-
-[tool.ruff.lint.isort]
-# Keep multiple aliased names from one module in a single combined import block
-# (e.g. the vendor re-exports in interface.py) instead of one statement per name.
-combine-as-imports = true
+[[tool.mypy.overrides]]
+module = [
+    "langgraph.checkpoint.sqlite",
+    "questionary.*",
+    "stockstats.*",
+    "yfinance.*",
+]
+ignore_missing_imports = true
