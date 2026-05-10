@@ -10,8 +10,10 @@ import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Generator, cast
 
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langchain_core.runnables import RunnableConfig
 
 from tradingagents.dataflows.utils import safe_ticker_component
 
@@ -63,7 +65,7 @@ def checkpoint_step(data_dir: str | Path, ticker: str, date: str, signature: str
         return None
     tid = thread_id(ticker, date, signature)
     with get_checkpointer(data_dir, ticker) as saver:
-        config = {"configurable": {"thread_id": tid}}
+        config = cast(RunnableConfig, {"configurable": {"thread_id": tid}})
         cp = saver.get_tuple(config)
         if cp is None:
             return None
