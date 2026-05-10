@@ -38,6 +38,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gui = [
+    "streamlit>=1.36.0",
+    "markdown>=3.5",
+]
+service = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "websockets>=13.0",
+    "markdown>=3.5",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
@@ -50,9 +60,11 @@ dev = [
 
 [project.scripts]
 tradingagents = "cli.main:app"
+tradingagents-gui = "gui.launcher:main"
+tradingagents-api = "service.app:main"
 
 [tool.setuptools.packages.find]
-include = ["tradingagents*", "cli*"]
+include = ["tradingagents*", "cli*", "gui*", "service*"]
 
 [tool.setuptools.package-data]
 cli = ["static/*"]
