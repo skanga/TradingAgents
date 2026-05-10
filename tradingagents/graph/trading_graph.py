@@ -512,13 +512,18 @@ class TradingAgentsGraph:
         # None resumes an existing checkpoint; init_agent_state starts fresh (#1249).
         graph_input = self.checkpoint_input(init_agent_state)
         if self.debug:
-            final_state = None
+            trace = []
             for chunk in self.graph.stream(init_agent_state, **args):
-                final_state = chunk
                 if len(chunk["messages"]) != 0:
                     chunk["messages"][-1].pretty_print()
-            if final_state is None:
+                trace.append(chunk)
+            if not trace:
                 raise RuntimeError("Graph stream produced no chunks")
+            # Streamed chunks are per-node deltas. Merge them so the returned
+            # state matches what graph.invoke() yields in the non-debug path.
+            final_state = {}
+            for chunk in trace:
+                final_state.update(chunk)
         else:
             final_state = self.graph.invoke(graph_input, **args)
 
