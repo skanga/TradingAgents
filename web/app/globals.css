@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS variables are space-separated RGB integers (Tailwind alpha-slot form).
+   Hex/rgb() forms don't work because Tailwind plugs <alpha-value> directly
+   into the rgb() function in tailwind.config.ts. */
+:root {
+  --bg:      13  17  23;
+  --surface: 22  27  34;
+  --border:  48  54  61;
+  --muted:   139 148 158;
+  --fg:      230 237 243;
+  --accent:  47  129 247;
+  --success: 63  185  80;
+  --warning: 210 153  34;
+  --danger:  248  81  73;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg:      255 255 255;
+    --surface: 246 248 250;
+    --border:  208 215 222;
+    --muted:    87  96 106;
+    --fg:       31  35  40;
+    --accent:    9 105 218;
+    --success:  45 164  78;
+    --warning: 154 103   0;
+    --danger:  207  34  46;
+  }
+}
+
+html, body {
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer components {
+  .app-shell {
+    @apply min-h-screen flex flex-col;
+  }
+  .app-sidebar {
+    @apply sticky top-0 z-20 w-full border-b border-border bg-bg px-4 py-3;
+  }
+  .app-brand {
+    @apply mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1;
+  }
+  .app-nav {
+    @apply flex flex-wrap gap-1;
+  }
+  .app-nav-link {
+    @apply inline-flex items-center rounded px-2 py-1.5 text-sm hover:bg-surface;
+  }
+  .app-main {
+    @apply w-full max-w-[1400px] flex-1 px-4 py-4;
+  }
+  .card {
+    @apply bg-surface border border-border rounded-lg p-4;
+  }
+  .btn {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-border bg-surface
+           hover:bg-bg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply text-white border-transparent;
+    background: rgb(var(--accent));
+  }
+  .btn-primary:hover {
+    filter: brightness(1.1);
+  }
+  .btn-danger {
+    @apply text-white border-transparent;
+    background: rgb(var(--danger));
+  }
+  .input {
+    @apply bg-bg border border-border rounded-md px-3 py-1.5 text-sm focus:outline-none
+           focus:ring-2 focus:ring-accent/40 focus:border-accent;
+  }
+  .label {
+    @apply text-xs uppercase tracking-wider text-muted block mb-1;
+  }
+  .pill {
+    @apply inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full;
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-shell {
+    @apply flex-row;
+  }
+  .app-sidebar {
+    @apply h-screen w-56 shrink-0 border-b-0 border-r p-4;
+  }
+  .app-brand {
+    @apply mb-6 block;
+  }
+  .app-nav {
+    @apply flex-col gap-1;
+  }
+  .app-nav-link {
+    @apply w-full;
+  }
+  .app-main {
+    @apply mx-auto px-6 py-6;
+  }
+}
