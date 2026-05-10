@@ -14,8 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -237,6 +237,21 @@ __marimo__/
 
 # Cache
 **/data_cache/
+
+# Local credentials for NAS / deploy automation. NEVER COMMITTED.
+# Author this from scripts/nas/credentials.local.example.
+scripts/nas/credentials.local
+*.local
+*.local.sh
+
+# Synology bind-mount target if developer mirrors it locally.
+data/
+
+# Next.js / web build artifacts.
+web/.next/
+web/node_modules/
+web/out/
+web/next-env.d.ts.bak
 
 # Local git worktrees
 .worktrees/
