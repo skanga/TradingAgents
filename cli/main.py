@@ -1651,8 +1651,11 @@ def run_analysis(
 
             trace.append(chunk)
 
-        # Get final state and decision
-        final_state = trace[-1]
+        # Streamed chunks are per-node deltas, not full state. Merge them
+        # so every report field populated across the run is present.
+        final_state = {}
+        for chunk in trace:
+            final_state.update(chunk)
         graph.process_signal(final_state["final_trade_decision"])
 
         # Update all agent statuses to completed
