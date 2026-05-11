@@ -7,9 +7,9 @@ import tradingagents.default_config as default_config
 _config_var: ContextVar[dict | None] = ContextVar("tradingagents_config", default=None)
 
 
-def _merged_config(config: Dict) -> Dict:
-    """Merge config into defaults, preserving sibling nested keys."""
-    base = deepcopy(default_config.DEFAULT_CONFIG)
+def _merge_config(base_config: Dict, config: Dict) -> Dict:
+    """Merge config into a base, preserving sibling nested keys."""
+    base = deepcopy(base_config)
     incoming = deepcopy(config)
     for key, value in incoming.items():
         if isinstance(value, dict) and isinstance(base.get(key), dict):
@@ -27,7 +27,10 @@ def initialize_config():
 
 def set_config(config: Dict):
     """Set configuration for the current context."""
-    _config_var.set(_merged_config(config))
+    current = _config_var.get()
+    if current is None:
+        current = default_config.DEFAULT_CONFIG
+    _config_var.set(_merge_config(current, config))
 
 
 def get_config() -> Dict:
@@ -41,7 +44,7 @@ def get_config() -> Dict:
 
 def use_config(config: Dict):
     """Apply configuration to the current context and return a reset token."""
-    return _config_var.set(_merged_config(config))
+    return _config_var.set(_merge_config(default_config.DEFAULT_CONFIG, config))
 
 
 def reset_config(token) -> None:
