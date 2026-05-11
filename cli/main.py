@@ -30,6 +30,7 @@ from cli.stats_handler import StatsCallbackHandler
 from cli.utils import (
     ask_anthropic_effort,
     ask_gemini_thinking_config,
+    ensure_api_key,
     ask_openai_reasoning_effort,
     ask_output_language,
     normalize_ticker_symbol,
@@ -750,6 +751,8 @@ def get_user_selections(
         selected_llm_provider, backend_url = ask_minimax_region()
     elif selected_llm_provider == "glm":
         selected_llm_provider, backend_url = ask_glm_region()
+
+    ensure_api_key(selected_llm_provider)
 
     # Step 7: Thinking agents
     selected_shallow_thinker = resolved_llm.quick_model if resolved_llm else None

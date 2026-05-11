@@ -16,7 +16,7 @@ from tradingagents.agents import (
     create_news_analyst,
     create_portfolio_manager,
     create_research_manager,
-    create_social_media_analyst,
+    create_sentiment_analyst,
     create_trader,
 )
 from tradingagents.agents.utils.agent_states import AgentState
@@ -76,7 +76,11 @@ class GraphSetup:
             tool_nodes["market"] = self.tool_nodes["market"]
 
         if "social" in selected_analysts:
-            analyst_nodes["social"] = create_social_media_analyst(
+            # "social" selector key preserved for back-compat with existing
+            # user configs; the underlying agent has been renamed to
+            # sentiment_analyst (the old name advertised social-media data
+            # the agent never had access to — see issue #557).
+            analyst_nodes["social"] = create_sentiment_analyst(
                 self.quick_thinking_llm
             )
             delete_nodes["social"] = create_msg_delete()
