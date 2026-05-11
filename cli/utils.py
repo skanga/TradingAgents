@@ -1,11 +1,16 @@
+import os
+from pathlib import Path
+from typing import List, Optional, Tuple
+
 import questionary
 import requests
-from typing import List, Tuple
+from dotenv import set_key
 
 from rich.console import Console
 
 from cli.models import AnalystType
 from tradingagents.dataflows.utils import safe_ticker_component
+from tradingagents.llm_clients.api_key_env import get_api_key_env
 from tradingagents.llm_clients.model_catalog import get_model_options
 
 console = Console()
@@ -14,7 +19,7 @@ TICKER_INPUT_EXAMPLES = "Examples: SPY, CNC.TO, 7203.T, 0700.HK"
 
 ANALYST_ORDER = [
     ("Market Analyst", AnalystType.MARKET),
-    ("Social Media Analyst", AnalystType.SOCIAL),
+    ("Sentiment Analyst", AnalystType.SOCIAL),
     ("News Analyst", AnalystType.NEWS),
     ("Fundamentals Analyst", AnalystType.FUNDAMENTALS),
 ]
@@ -417,6 +422,36 @@ def ask_minimax_region() -> tuple[str, str]:
             ("pointer", "fg:cyan noinherit"),
         ]),
     ).ask()
+
+
+def ensure_api_key(provider: str) -> Optional[str]:
+    """Ensure the provider API key exists, prompting and persisting to .env if needed."""
+    env_var = get_api_key_env(provider)
+    if env_var is None:
+        return None
+
+    existing = os.environ.get(env_var)
+    if existing:
+        return existing
+
+    console.print(f"\n[yellow]{env_var} is not set in your environment.[/yellow]")
+    key = questionary.password(
+        f"Paste your {env_var} (will be saved to .env):",
+        style=questionary.Style([
+            ("text", "fg:cyan"),
+            ("highlighted", "noinherit"),
+        ]),
+    ).ask()
+    if not key:
+        console.print(f"[red]Skipped. API calls will fail until {env_var} is set.[/red]")
+        return None
+
+    env_path = str(Path.cwd() / ".env")
+    Path(env_path).touch(exist_ok=True)
+    set_key(env_path, env_var, key)
+    os.environ[env_var] = key
+    console.print(f"[green]Saved {env_var} to {env_path}[/green]")
+    return key
 
 
 def ask_output_language() -> str:
