@@ -3,6 +3,7 @@ from html import escape
 import time
 from collections import deque
 from dataclasses import dataclass
+import questionary
 from pathlib import Path
 from typing import Any, TypedDict, cast
 import textwrap
@@ -740,6 +741,16 @@ def get_user_selections(
         if backend_url is None:
             backend_url = selected_backend_url
 
+    # Providers with regional endpoints prompt for the region as a secondary
+    # step so the main dropdown stays clean (mainland China and international
+    # accounts cannot share API keys).
+    if selected_llm_provider == "qwen":
+        selected_llm_provider, backend_url = ask_qwen_region()
+    elif selected_llm_provider == "minimax":
+        selected_llm_provider, backend_url = ask_minimax_region()
+    elif selected_llm_provider == "glm":
+        selected_llm_provider, backend_url = ask_glm_region()
+
     # Step 7: Thinking agents
     selected_shallow_thinker = resolved_llm.quick_model if resolved_llm else None
     selected_deep_thinker = resolved_llm.deep_model if resolved_llm else None
@@ -829,8 +840,26 @@ def _build_user_selections(
 
 
 def get_ticker():
-    """Get ticker symbol from user input."""
-    return typer.prompt("", default="SPY")
+    """Get ticker symbol from user input, preserving exchange suffixes."""
+    # typer.prompt strips trailing dot-suffixes on some shells (e.g. 000404.SH
+    # collapses to 000404). questionary.text reads the raw line.
+    ticker = questionary.text(
+        "",
+        validate=lambda value: (
+            not value.strip()
+            or (
+                all(ch.isalnum() or ch in "._-^" for ch in value.strip())
+                and len(value.strip()) <= 32
+            )
+        )
+        or "Please enter a valid ticker symbol, e.g. AAPL, 000404.SZ, 0700.HK.",
+    ).ask()
+
+    if ticker is None:
+        console.print("\n[red]No ticker symbol provided. Exiting...[/red]")
+        raise typer.Exit(1)
+
+    return (ticker.strip() or "SPY").upper()
 
 
 def get_analysis_date():
@@ -1651,8 +1680,11 @@ def run_analysis(
 
             trace.append(chunk)
 
-        # Get final state and decision
-        final_state = trace[-1]
+        # Streamed chunks are per-node deltas, not full state. Merge them
+        # so every report field populated across the run is present.
+        final_state = {}
+        for chunk in trace:
+            final_state.update(chunk)
         graph.process_signal(final_state["final_trade_decision"])
 
         # Update all agent statuses to completed
