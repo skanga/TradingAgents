@@ -748,6 +748,8 @@ def get_user_selections(
         selected_llm_provider, backend_url = ask_qwen_region()
     elif selected_llm_provider == "minimax":
         selected_llm_provider, backend_url = ask_minimax_region()
+    elif selected_llm_provider == "glm":
+        selected_llm_provider, backend_url = ask_glm_region()
 
     # Step 7: Thinking agents
     selected_shallow_thinker = resolved_llm.quick_model if resolved_llm else None
