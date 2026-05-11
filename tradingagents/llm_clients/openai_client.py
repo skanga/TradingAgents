@@ -49,23 +49,6 @@ class NormalizedChatOpenAI(ChatOpenAI):
         return super().with_structured_output(schema, method=method, **kwargs)
 
 
-class LocalCompatibleChatOpenAI(NormalizedChatOpenAI):
-    """OpenAI-compatible client for arbitrary local servers (LM Studio, vLLM,
-    llama.cpp via the generic ``openai_compatible`` provider).
-
-    Their tool-calling support varies, and many reject the object-form
-    ``tool_choice`` langchain sends for function-calling structured output. Bind
-    the schema as a tool but don't force tool_choice, so structured output works
-    across local servers regardless of the model ID's capabilities (#1057).
-    """
-
-    def with_structured_output(self, schema, *, method=None, **kwargs):
-        resolved = method or get_capabilities(self.model_name).preferred_structured_method
-        if resolved == "function_calling":
-            kwargs.setdefault("tool_choice", None)
-        return super().with_structured_output(schema, method=method, **kwargs)
-
-
 def _input_to_messages(input_: Any) -> list:
     """Normalise a langchain LLM input to a list of message objects.
 
@@ -132,15 +115,9 @@ class MinimaxChatOpenAI(NormalizedChatOpenAI):
 
     M2.x reasoning models embed ``<think>...</think>`` blocks directly in
     ``message.content`` by default, which would pollute saved reports.
-    Per platform.minimax.io/docs/api-reference/text-openai-api,
-    ``reasoning_split=True`` redirects the thinking block into
-    ``reasoning_details`` so ``content`` stays clean. It is sent via
-    ``extra_body`` (not a top-level kwarg) because the openai SDK validates
-    top-level params and rejects unknown ones like reasoning_split (#826).
-
-    The flag is gated by ``ModelCapabilities.requires_reasoning_split`` so
-    only M2.x reasoning models receive it; non-reasoning MiniMax endpoints
-    (Coding Plan, MiniMax-Text-01) never see it.
+    Per platform.minimax.io/docs/api-reference/text-openai-api, setting
+    ``reasoning_split=True`` in the request body redirects the thinking
+    block into ``reasoning_details`` so ``content`` stays clean.
 
     Tool-choice handling for M2.x — those models accept only the string
     enum ``{"none", "auto"}`` and reject langchain's function-spec dict —
@@ -150,13 +127,7 @@ class MinimaxChatOpenAI(NormalizedChatOpenAI):
 
     def _get_request_payload(self, input_, *, stop=None, **kwargs):
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
-        if get_capabilities(self.model_name).requires_reasoning_split:
-            # Pass via extra_body, not as a top-level kwarg: the openai SDK
-            # (>=1.56) validates top-level params against Completions.create
-            # and rejects unknown ones like reasoning_split (#826). extra_body
-            # is forwarded into the request body untouched.
-            extra_body = payload.setdefault("extra_body", {})
-            extra_body.setdefault("reasoning_split", True)
+        payload.setdefault("reasoning_split", True)
         return payload
 
 
@@ -166,68 +137,26 @@ _PASSTHROUGH_KWARGS = (
     "api_key", "callbacks", "http_client", "http_async_client",
 )
 
-# OpenAI's ``reasoning_effort`` is only accepted by reasoning models — the GPT-5
-# family and the o-series. Non-reasoning models (gpt-4.1, gpt-4o, ...) 400 with
-# "Unsupported parameter: 'reasoning.effort' is not supported with this model".
-# Drop the kwarg for those rather than crash the run.
-_OPENAI_REASONING_MODEL = re.compile(r"^(gpt-5|o[1-9])")
-
-
-def _supports_reasoning_effort(model: str) -> bool:
-    """Whether the (native OpenAI) model accepts ``reasoning_effort``."""
-    return bool(_OPENAI_REASONING_MODEL.match(model.lower().strip()))
-
-
-@dataclass(frozen=True)
-class ProviderSpec:
-    """Declarative config for one OpenAI-compatible provider.
-
-    The OpenAI-compatible family (OpenAI, xAI, DeepSeek, Qwen, GLM, MiniMax,
-    OpenRouter, Ollama, and any user endpoint) all speak the same Chat
-    Completions API and differ only by these fields — so one row here replaces
-    the former per-provider base-URL dict, auth handling, and client-class
-    branches. Native Anthropic / Google use their own clients (genuinely
-    different APIs) and are intentionally NOT in this registry.
-
-    The API-key env var stays in ``api_key_env.PROVIDER_API_KEY_ENV`` (the single
-    source consulted by both this client and the CLI prompt); only behavior that
-    is provider-specific (base URL, key optionality, wire-format quirks via
-    ``chat_class``) lives here.
-    """
-
-    chat_class: type = NormalizedChatOpenAI   # provider quirks live in the subclass
-    base_url: str | None = None            # default endpoint (None -> SDK default)
-    base_url_env: str | None = None        # env var that overrides base_url (e.g. OLLAMA_BASE_URL)
-    key_optional: bool = False                # don't require/prompt; send a placeholder if unset
-    placeholder_key: str = "EMPTY"            # sent when no key is available (keyless local servers)
-    require_base_url: bool = False            # error if no base_url is resolved (generic endpoint)
-    use_responses_api: bool = False           # native OpenAI Responses API
-
-
-# Single source of truth for the OpenAI-compatible provider family. Dual-region
-# providers (qwen/glm/minimax) keep separate endpoints because international and
-# China accounts cannot share credentials (#758).
-OPENAI_COMPATIBLE_PROVIDERS: dict[str, ProviderSpec] = {
-    "openai":     ProviderSpec(use_responses_api=True),
-    "xai":        ProviderSpec(base_url="https://api.x.ai/v1"),
-    "deepseek":   ProviderSpec(base_url="https://api.deepseek.com", chat_class=DeepSeekChatOpenAI),
-    "qwen":       ProviderSpec(base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
-    "qwen-cn":    ProviderSpec(base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"),
-    "glm":        ProviderSpec(base_url="https://api.z.ai/api/paas/v4/"),
-    "glm-cn":     ProviderSpec(base_url="https://open.bigmodel.cn/api/paas/v4/"),
-    "minimax":    ProviderSpec(base_url="https://api.minimax.io/v1", chat_class=MinimaxChatOpenAI),
-    "minimax-cn": ProviderSpec(base_url="https://api.minimaxi.com/v1", chat_class=MinimaxChatOpenAI),
-    "openrouter": ProviderSpec(base_url="https://openrouter.ai/api/v1"),
-    "mistral":    ProviderSpec(base_url="https://api.mistral.ai/v1"),
-    "kimi":       ProviderSpec(base_url="https://api.moonshot.ai/v1"),
-    "groq":       ProviderSpec(base_url="https://api.groq.com/openai/v1"),
-    "nvidia":     ProviderSpec(base_url="https://integrate.api.nvidia.com/v1"),
-    "ollama":     ProviderSpec(base_url="http://localhost:11434/v1", base_url_env="OLLAMA_BASE_URL",
-                               key_optional=True, placeholder_key="ollama"),
-    # Generic endpoint: user supplies base_url; key optional (keyless local).
-    "openai_compatible": ProviderSpec(
-        require_base_url=True, key_optional=True, chat_class=LocalCompatibleChatOpenAI
-    ),
+# Provider base URLs and API key env vars
+_PROVIDER_CONFIG = {
+    "xai": ("https://api.x.ai/v1", "XAI_API_KEY"),
+    "deepseek": ("https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+    # DashScope exposes two regional endpoints with separate accounts; an
+    # international key won't authenticate against the China endpoint and
+    # vice versa (fixes issue #758).
+    "qwen": ("https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "DASHSCOPE_API_KEY"),
+    "qwen-cn": ("https://dashscope.aliyuncs.com/compatible-mode/v1", "DASHSCOPE_CN_API_KEY"),
+    # Zhipu exposes the same GLM models under two brands with separate
+    # accounts: Z.AI (international, api.z.ai) and BigModel
+    # (open.bigmodel.cn, China). Keys aren't interchangeable across them.
+    "glm": ("https://api.z.ai/api/paas/v4/", "ZHIPU_API_KEY"),
+    "glm-cn": ("https://open.bigmodel.cn/api/paas/v4/", "ZHIPU_CN_API_KEY"),
+    # MiniMax exposes two regional endpoints with separate keys; mainland
+    # Chinese users hit .com while global users hit .io.
+    "minimax": ("https://api.minimax.io/v1", "MINIMAX_API_KEY"),
+    "minimax-cn": ("https://api.minimaxi.com/v1", "MINIMAX_CN_API_KEY"),
+    "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
+    "ollama": ("http://localhost:11434/v1", None),
 }
 
 
@@ -288,6 +217,12 @@ class OpenAIClient(BaseLLMClient):
                 api_key = os.environ.get(api_key_env)
                 if api_key:
                     llm_kwargs["api_key"] = api_key
+                else:
+                    raise ValueError(
+                        f"API key for provider '{self.provider}' is not set. "
+                        f"Please set the {api_key_env} environment variable "
+                        f"(e.g. add {api_key_env}=your_key to your .env file)."
+                    )
             else:
                 llm_kwargs["api_key"] = "ollama"
         elif self.base_url and not is_native_openai:
@@ -305,9 +240,14 @@ class OpenAIClient(BaseLLMClient):
         if is_native_openai:
             llm_kwargs["use_responses_api"] = True
 
-        # DeepSeek's thinking-mode quirks live in their own subclass so the
-        # base NormalizedChatOpenAI stays free of provider-specific branches.
-        chat_cls = DeepSeekChatOpenAI if self.provider == "deepseek" else NormalizedChatOpenAI
+        # Provider-specific quirks live in their own subclasses so the
+        # base NormalizedChatOpenAI stays free of provider branches.
+        if self.provider == "deepseek":
+            chat_cls = DeepSeekChatOpenAI
+        elif self.provider in ("minimax", "minimax-cn"):
+            chat_cls = MinimaxChatOpenAI
+        else:
+            chat_cls = NormalizedChatOpenAI
         return chat_cls(**llm_kwargs)
 
     def validate_model(self) -> bool:

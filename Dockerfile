@@ -25,7 +25,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Synology bind-mounts permission-check against when you set the share
 # owner via Control Panel → Shared Folder → permissions.
 RUN groupadd --gid 1000 appuser \
- && useradd --uid 1000 --gid 1000 --create-home appuser
+ && useradd --uid 1000 --gid 1000 --create-home appuser \
+ && install -d -m 0755 -o appuser -g appuser /home/appuser/.tradingagents
 USER appuser
 WORKDIR /home/appuser/app
 

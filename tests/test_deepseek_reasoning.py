@@ -16,7 +16,7 @@ import os
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompt_values import ChatPromptValue
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 
 from tradingagents.llm_clients.openai_client import (
     DeepSeekChatOpenAI,
@@ -127,12 +127,18 @@ def _bound_kwargs(runnable):
 
 
 @pytest.mark.unit
-class TestDeepSeekReasonerStructuredOutput:
-    def test_with_structured_output_raises_for_reasoner(self) -> None:
-        client = DeepSeekChatOpenAI(
-            model="deepseek-reasoner",
-            api_key=SecretStr("placeholder"),
-            base_url="https://api.deepseek.com",
+class TestStructuredOutputCapabilityDispatch:
+    """DeepSeek V4 and reasoner reject the tool_choice parameter
+    (official guide: api-docs.deepseek.com/guides/tool_calls passes
+    tools=[...] without tool_choice). Verify the capability dispatch
+    suppresses tool_choice for those models and sends it for chat."""
+
+    class _Sample(BaseModel):
+        answer: str
+
+    def _client(self, model):
+        return DeepSeekChatOpenAI(
+            model=model, api_key="placeholder", base_url="https://api.deepseek.com",
         )
 
     def test_chat_sends_tool_choice(self):
@@ -146,11 +152,64 @@ class TestDeepSeekReasonerStructuredOutput:
         assert _bound_kwargs(bound).get("tool_choice") in (None, ...) or \
             "tool_choice" not in _bound_kwargs(bound)
 
-    def test_with_structured_output_works_for_v4(self) -> None:
-        """V4 models (non-reasoner) accept tool_choice; structured output works."""
+    def test_v4_flash_suppresses_tool_choice(self):
+        bound = self._client("deepseek-v4-flash").with_structured_output(self._Sample)
+        assert _bound_kwargs(bound).get("tool_choice") is None or \
+            "tool_choice" not in _bound_kwargs(bound)
+
+    def test_v4_pro_suppresses_tool_choice(self):
+        bound = self._client("deepseek-v4-pro").with_structured_output(self._Sample)
+        assert _bound_kwargs(bound).get("tool_choice") is None or \
+            "tool_choice" not in _bound_kwargs(bound)
+
+    def test_future_v_variant_via_regex(self):
+        """Forward-compat: unknown deepseek-v\\d-* IDs inherit V4 quirks."""
+        bound = self._client("deepseek-v5-hypothetical").with_structured_output(self._Sample)
+        assert _bound_kwargs(bound).get("tool_choice") is None or \
+            "tool_choice" not in _bound_kwargs(bound)
+
+    def test_schema_is_still_bound_as_tool(self):
+        """tool_choice is suppressed, but the schema is still bound as a tool —
+        exactly matching DeepSeek's official tool-calling examples."""
+        bound = self._client("deepseek-reasoner").with_structured_output(self._Sample)
+        kwargs = _bound_kwargs(bound)
+        tools = kwargs.get("tools", [])
+        assert any(
+            t.get("function", {}).get("name") == "_Sample" for t in tools
+        ), f"schema not bound as a tool: {tools}"
+
+
+# ---------------------------------------------------------------------------
+# Live API: structured output round-trips against the real DeepSeek backend
+# ---------------------------------------------------------------------------
+
+
+def _has_real_deepseek_key():
+    key = os.environ.get("DEEPSEEK_API_KEY", "")
+    return bool(key) and key != "placeholder"
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not _has_real_deepseek_key(),
+    reason="DEEPSEEK_API_KEY not set (or placeholder); skipping live API call",
+)
+class TestDeepSeekLiveStructuredOutput:
+    """End-to-end: a real DeepSeek V4-flash call returns a typed instance.
+
+    Verifies the no-tool_choice path doesn't trigger the 400 reported in
+    issue #678 and that the structured-output binding still parses to a
+    Pydantic instance.
+    """
+
+    class _Pick(BaseModel):
+        action: str
+        confidence: float
+
+    def test_v4_flash_returns_structured_output(self):
         client = DeepSeekChatOpenAI(
             model="deepseek-v4-flash",
-            api_key=SecretStr("placeholder"),
+            api_key=os.environ["DEEPSEEK_API_KEY"],
             base_url="https://api.deepseek.com",
             timeout=60,
         )

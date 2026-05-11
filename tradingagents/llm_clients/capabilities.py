@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+
 StructuredMethod = Literal[
     "function_calling",  # uses tools; respects supports_tool_choice
     "json_mode",         # uses response_format={"type":"json_object"}
@@ -37,12 +38,6 @@ class ModelCapabilities:
     # DeepSeek thinking-mode models 400 if reasoning_content from prior
     # assistant turns is not echoed back on the next request.
     requires_reasoning_content_roundtrip: bool = False
-    # MiniMax M2.x reasoning models need ``reasoning_split=True`` so the
-    # <think> block lands in ``reasoning_details`` instead of polluting
-    # ``content``. The flag is rejected by non-reasoning MiniMax models
-    # (Coding Plan, MiniMax-Text-01, etc.), so we only set it where the
-    # model actually consumes it. (#826)
-    requires_reasoning_split: bool = False
 
 
 # DeepSeek's thinking models accept the ``tools`` array but reject the
@@ -79,7 +74,6 @@ _MINIMAX_THINKING = ModelCapabilities(
     supports_json_mode=False,
     supports_json_schema=False,
     preferred_structured_method="function_calling",
-    requires_reasoning_split=True,
 )
 
 _DEFAULT = ModelCapabilities(
@@ -118,15 +112,6 @@ _BY_PATTERN: list[tuple[re.Pattern[str], ModelCapabilities]] = [
 
 def get_capabilities(model_name: str) -> ModelCapabilities:
     """Resolve capabilities by exact ID, then pattern, then default."""
-    # OpenRouter namespaces official DeepSeek models as ``deepseek/<id>``, so
-    # strip that prefix to reuse the same quirks as the native provider — e.g.
-    # ``deepseek/deepseek-v4-flash`` must suppress tool_choice like
-    # ``deepseek-v4-flash`` does, not fall through to _DEFAULT (#1199). Only the
-    # official namespace is stripped; third-party finetunes on other publishers
-    # (e.g. ``tngtech/deepseek-...``) keep _DEFAULT, since their quirks are unknown.
-    if model_name.startswith("deepseek/"):
-        model_name = model_name.removeprefix("deepseek/")
-
     if model_name in _BY_ID:
         return _BY_ID[model_name]
     for pattern, caps in _BY_PATTERN:
