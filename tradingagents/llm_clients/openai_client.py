@@ -49,23 +49,6 @@ class NormalizedChatOpenAI(ChatOpenAI):
         return super().with_structured_output(schema, method=method, **kwargs)
 
 
-class LocalCompatibleChatOpenAI(NormalizedChatOpenAI):
-    """OpenAI-compatible client for arbitrary local servers (LM Studio, vLLM,
-    llama.cpp via the generic ``openai_compatible`` provider).
-
-    Their tool-calling support varies, and many reject the object-form
-    ``tool_choice`` langchain sends for function-calling structured output. Bind
-    the schema as a tool but don't force tool_choice, so structured output works
-    across local servers regardless of the model ID's capabilities (#1057).
-    """
-
-    def with_structured_output(self, schema, *, method=None, **kwargs):
-        resolved = method or get_capabilities(self.model_name).preferred_structured_method
-        if resolved == "function_calling":
-            kwargs.setdefault("tool_choice", None)
-        return super().with_structured_output(schema, method=method, **kwargs)
-
-
 def _input_to_messages(input_: Any) -> list:
     """Normalise a langchain LLM input to a list of message objects.
 
@@ -125,40 +108,6 @@ class DeepSeekChatOpenAI(NormalizedChatOpenAI):
             if reasoning is not None:
                 generation.message.additional_kwargs["reasoning_content"] = reasoning
         return chat_result
-
-
-class MinimaxChatOpenAI(NormalizedChatOpenAI):
-    """MiniMax-specific overrides on top of the OpenAI-compatible client.
-
-    M2.x reasoning models embed ``<think>...</think>`` blocks directly in
-    ``message.content`` by default, which would pollute saved reports.
-    Per platform.minimax.io/docs/api-reference/text-openai-api,
-    ``reasoning_split=True`` redirects the thinking block into
-    ``reasoning_details`` so ``content`` stays clean. It is sent via
-    ``extra_body`` (not a top-level kwarg) because the openai SDK validates
-    top-level params and rejects unknown ones like reasoning_split (#826).
-
-    The flag is gated by ``ModelCapabilities.requires_reasoning_split`` so
-    only M2.x reasoning models receive it; non-reasoning MiniMax endpoints
-    (Coding Plan, MiniMax-Text-01) never see it.
-
-    Tool-choice handling for M2.x — those models accept only the string
-    enum ``{"none", "auto"}`` and reject langchain's function-spec dict —
-    is handled by the capability dispatch in
-    ``NormalizedChatOpenAI.with_structured_output``, not here.
-    """
-
-    def _get_request_payload(self, input_, *, stop=None, **kwargs):
-        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
-        if get_capabilities(self.model_name).requires_reasoning_split:
-            # Pass via extra_body, not as a top-level kwarg: the openai SDK
-            # (>=1.56) validates top-level params against Completions.create
-            # and rejects unknown ones like reasoning_split (#826). extra_body
-            # is forwarded into the request body untouched.
-            extra_body = payload.setdefault("extra_body", {})
-            extra_body.setdefault("reasoning_split", True)
-        return payload
-
 
 # Kwargs forwarded from user config to ChatOpenAI
 _PASSTHROUGH_KWARGS = (
