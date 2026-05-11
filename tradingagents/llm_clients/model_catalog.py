@@ -78,6 +78,22 @@ _MINIMAX_MODELS: dict[str, list[ModelOption]] = {
 }
 
 
+# Shared model list for MiniMax's global and CN endpoints (same model IDs).
+_MINIMAX_MODELS: Dict[str, List[ModelOption]] = {
+    "quick": [
+        ("MiniMax M2.7 Highspeed — Fast, 204K ctx", "MiniMax-M2.7-highspeed"),
+        ("MiniMax M2.5 Highspeed — Previous-gen fast", "MiniMax-M2.5-highspeed"),
+        ("Custom model ID", "custom"),
+    ],
+    "deep": [
+        ("MiniMax M2.7 — Flagship, 204K ctx", "MiniMax-M2.7"),
+        ("MiniMax M2.5 — Previous-gen flagship", "MiniMax-M2.5"),
+        ("MiniMax M2.7 Highspeed — Faster M2.7, 204K ctx", "MiniMax-M2.7-highspeed"),
+        ("Custom model ID", "custom"),
+    ],
+}
+
+
 MODEL_OPTIONS: ProviderModeOptions = {
     "openai": {
         "quick": [
@@ -141,14 +157,6 @@ MODEL_OPTIONS: ProviderModeOptions = {
             ("Custom model ID", "custom"),
         ],
     },
-    # Qwen: same model IDs across global (dashscope-intl) and China
-    # (dashscope) endpoints, so the two provider keys share one model list.
-    "qwen": _QWEN_MODELS,
-    "qwen-cn": _QWEN_MODELS,
-    # GLM: Z.AI (international) and BigModel (China) host the same model
-    # IDs; the two provider keys share one model list.
-    "glm": _GLM_MODELS,
-    "glm-cn": _GLM_MODELS,
     # MiniMax: same model IDs across global (.io) and China (.com) regions,
     # so the two provider keys share one model list.
     "minimax": _MINIMAX_MODELS,

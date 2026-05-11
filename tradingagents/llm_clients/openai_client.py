@@ -115,68 +115,18 @@ _PASSTHROUGH_KWARGS = (
     "api_key", "callbacks", "http_client", "http_async_client",
 )
 
-# OpenAI's ``reasoning_effort`` is only accepted by reasoning models — the GPT-5
-# family and the o-series. Non-reasoning models (gpt-4.1, gpt-4o, ...) 400 with
-# "Unsupported parameter: 'reasoning.effort' is not supported with this model".
-# Drop the kwarg for those rather than crash the run.
-_OPENAI_REASONING_MODEL = re.compile(r"^(gpt-5|o[1-9])")
-
-
-def _supports_reasoning_effort(model: str) -> bool:
-    """Whether the (native OpenAI) model accepts ``reasoning_effort``."""
-    return bool(_OPENAI_REASONING_MODEL.match(model.lower().strip()))
-
-
-@dataclass(frozen=True)
-class ProviderSpec:
-    """Declarative config for one OpenAI-compatible provider.
-
-    The OpenAI-compatible family (OpenAI, xAI, DeepSeek, Qwen, GLM, MiniMax,
-    OpenRouter, Ollama, and any user endpoint) all speak the same Chat
-    Completions API and differ only by these fields — so one row here replaces
-    the former per-provider base-URL dict, auth handling, and client-class
-    branches. Native Anthropic / Google use their own clients (genuinely
-    different APIs) and are intentionally NOT in this registry.
-
-    The API-key env var stays in ``api_key_env.PROVIDER_API_KEY_ENV`` (the single
-    source consulted by both this client and the CLI prompt); only behavior that
-    is provider-specific (base URL, key optionality, wire-format quirks via
-    ``chat_class``) lives here.
-    """
-
-    chat_class: type = NormalizedChatOpenAI   # provider quirks live in the subclass
-    base_url: str | None = None            # default endpoint (None -> SDK default)
-    base_url_env: str | None = None        # env var that overrides base_url (e.g. OLLAMA_BASE_URL)
-    key_optional: bool = False                # don't require/prompt; send a placeholder if unset
-    placeholder_key: str = "EMPTY"            # sent when no key is available (keyless local servers)
-    require_base_url: bool = False            # error if no base_url is resolved (generic endpoint)
-    use_responses_api: bool = False           # native OpenAI Responses API
-
-
-# Single source of truth for the OpenAI-compatible provider family. Dual-region
-# providers (qwen/glm/minimax) keep separate endpoints because international and
-# China accounts cannot share credentials (#758).
-OPENAI_COMPATIBLE_PROVIDERS: dict[str, ProviderSpec] = {
-    "openai":     ProviderSpec(use_responses_api=True),
-    "xai":        ProviderSpec(base_url="https://api.x.ai/v1"),
-    "deepseek":   ProviderSpec(base_url="https://api.deepseek.com", chat_class=DeepSeekChatOpenAI),
-    "qwen":       ProviderSpec(base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
-    "qwen-cn":    ProviderSpec(base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"),
-    "glm":        ProviderSpec(base_url="https://api.z.ai/api/paas/v4/"),
-    "glm-cn":     ProviderSpec(base_url="https://open.bigmodel.cn/api/paas/v4/"),
-    "minimax":    ProviderSpec(base_url="https://api.minimax.io/v1", chat_class=MinimaxChatOpenAI),
-    "minimax-cn": ProviderSpec(base_url="https://api.minimaxi.com/v1", chat_class=MinimaxChatOpenAI),
-    "openrouter": ProviderSpec(base_url="https://openrouter.ai/api/v1"),
-    "mistral":    ProviderSpec(base_url="https://api.mistral.ai/v1"),
-    "kimi":       ProviderSpec(base_url="https://api.moonshot.ai/v1"),
-    "groq":       ProviderSpec(base_url="https://api.groq.com/openai/v1"),
-    "nvidia":     ProviderSpec(base_url="https://integrate.api.nvidia.com/v1"),
-    "ollama":     ProviderSpec(base_url="http://localhost:11434/v1", base_url_env="OLLAMA_BASE_URL",
-                               key_optional=True, placeholder_key="ollama"),
-    # Generic endpoint: user supplies base_url; key optional (keyless local).
-    "openai_compatible": ProviderSpec(
-        require_base_url=True, key_optional=True, chat_class=LocalCompatibleChatOpenAI
-    ),
+# Provider base URLs and API key env vars
+_PROVIDER_CONFIG = {
+    "xai": ("https://api.x.ai/v1", "XAI_API_KEY"),
+    "deepseek": ("https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+    "qwen": ("https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "DASHSCOPE_API_KEY"),
+    "glm": ("https://api.z.ai/api/paas/v4/", "ZHIPU_API_KEY"),
+    # MiniMax exposes two regional endpoints with separate keys; mainland
+    # Chinese users hit .com while global users hit .io.
+    "minimax": ("https://api.minimax.io/v1", "MINIMAX_API_KEY"),
+    "minimax-cn": ("https://api.minimaxi.com/v1", "MINIMAX_CN_API_KEY"),
+    "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
+    "ollama": ("http://localhost:11434/v1", None),
 }
 
 
