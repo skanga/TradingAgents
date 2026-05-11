@@ -145,14 +145,15 @@ MODEL_OPTIONS: ProviderModeOptions = {
     },
     "xai": {
         "quick": [
-            ("Grok 4.3 - Latest flagship, fast with built-in reasoning", "grok-4.3"),
-            ("Grok 4.20 (Non-Reasoning) - Speed-optimized", "grok-4.20-0309-non-reasoning"),
-            ("Grok Build 0.1 - Coding-specialized, 256K ctx", "grok-build-0.1"),
+            ("Grok 4.20 (Non-Reasoning) - Latest, speed-optimized", "grok-4.20-non-reasoning"),
+            ("Grok 4 Fast (Non-Reasoning) - Speed optimized", "grok-4-fast-non-reasoning"),
+            ("Grok 4 Fast (Reasoning) - High-performance", "grok-4-fast-reasoning"),
         ],
         "deep": [
-            ("Grok 4.3 - Latest flagship, built-in reasoning, 1M ctx", "grok-4.3"),
-            ("Grok 4.20 (Reasoning) - Previous-gen reasoning", "grok-4.20-0309-reasoning"),
-            ("Grok 4.20 Multi-Agent - Multi-agent reasoning", "grok-4.20-multi-agent-0309"),
+            ("Grok 4.20 (Reasoning) - Latest frontier reasoning model", "grok-4.20-reasoning"),
+            ("Grok 4 - Flagship (dated build)", "grok-4-0709"),
+            ("Grok 4 Fast (Reasoning) - High-performance", "grok-4-fast-reasoning"),
+            ("Grok 4.20 - Auto-select reasoning behavior", "grok-4.20"),
         ],
     },
     # DeepSeek: the deepseek-chat / deepseek-reasoner aliases are deprecated
