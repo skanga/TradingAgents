@@ -741,6 +741,14 @@ def get_user_selections(
         if backend_url is None:
             backend_url = selected_backend_url
 
+    # Providers with regional endpoints prompt for the region as a secondary
+    # step so the main dropdown stays clean (mainland China and international
+    # accounts cannot share API keys).
+    if selected_llm_provider == "qwen":
+        selected_llm_provider, backend_url = ask_qwen_region()
+    elif selected_llm_provider == "minimax":
+        selected_llm_provider, backend_url = ask_minimax_region()
+
     # Step 7: Thinking agents
     selected_shallow_thinker = resolved_llm.quick_model if resolved_llm else None
     selected_deep_thinker = resolved_llm.deep_model if resolved_llm else None
