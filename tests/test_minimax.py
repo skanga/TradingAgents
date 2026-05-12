@@ -10,6 +10,7 @@ import os
 import pytest
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
+from pydantic import SecretStr
 
 from tradingagents.llm_clients.openai_client import MinimaxChatOpenAI
 
@@ -18,7 +19,7 @@ def _client(model: str = "MiniMax-M2.7"):
     os.environ.setdefault("MINIMAX_API_KEY", "placeholder")
     return MinimaxChatOpenAI(
         model=model,
-        api_key="placeholder",
+        api_key=SecretStr("placeholder"),
         base_url="https://api.minimax.io/v1",
     )
 

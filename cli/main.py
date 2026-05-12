@@ -29,10 +29,14 @@ from cli.models import AnalystType
 from cli.stats_handler import StatsCallbackHandler
 from cli.utils import (
     ask_anthropic_effort,
+    ask_glm_region,
     ask_gemini_thinking_config,
+    ask_minimax_region,
     ensure_api_key,
     ask_openai_reasoning_effort,
     ask_output_language,
+    ask_qwen_region,
+    confirm_ollama_endpoint,
     normalize_ticker_symbol,
     select_analysts,
     select_deep_thinking_agent,
@@ -755,6 +759,7 @@ def get_user_selections(
     # For Ollama, surface the resolved endpoint (OLLAMA_BASE_URL vs default)
     # before model selection so it's obvious where we're connecting.
     if selected_llm_provider == "ollama":
+        backend_url = backend_url or "http://localhost:11434/v1"
         confirm_ollama_endpoint(backend_url)
 
     # Confirm the provider's API key is present; prompt the user to paste

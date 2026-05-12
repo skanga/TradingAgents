@@ -237,6 +237,7 @@ class OpenAIClient(BaseLLMClient):
 
         # Provider-specific quirks live in their own subclasses so the
         # base NormalizedChatOpenAI stays free of provider branches.
+        chat_cls: type[NormalizedChatOpenAI]
         if self.provider == "deepseek":
             chat_cls = DeepSeekChatOpenAI
         elif self.provider in ("minimax", "minimax-cn"):
