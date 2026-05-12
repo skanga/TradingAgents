@@ -186,14 +186,40 @@ class TestStructuredOutputCapabilityDispatch:
 
 
 def _has_real_deepseek_key():
+    if os.environ.get("RUN_LIVE_DEEPSEEK_TESTS") != "1":
+        return False
     key = os.environ.get("DEEPSEEK_API_KEY", "")
-    return bool(key) and key != "placeholder"
+    lowered = key.lower()
+    dummy_markers = ("placeholder", "dummy", "example", "test")
+    return bool(key) and not any(marker in lowered for marker in dummy_markers)
+
+
+@pytest.mark.unit
+class TestDeepSeekLiveGate:
+    def test_live_test_skips_without_explicit_opt_in(self, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "real-looking-key")
+        monkeypatch.delenv("RUN_LIVE_DEEPSEEK_TESTS", raising=False)
+        assert not _has_real_deepseek_key()
+
+    def test_live_test_skips_placeholder_style_keys(self, monkeypatch):
+        monkeypatch.setenv("RUN_LIVE_DEEPSEEK_TESTS", "1")
+        for key in ("placeholder", "sk-deepseek-test", "dummy-key", "example-key"):
+            monkeypatch.setenv("DEEPSEEK_API_KEY", key)
+            assert not _has_real_deepseek_key()
+
+    def test_live_test_runs_only_when_opted_in_with_real_key(self, monkeypatch):
+        monkeypatch.setenv("RUN_LIVE_DEEPSEEK_TESTS", "1")
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-live-secret")
+        assert _has_real_deepseek_key()
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(
     not _has_real_deepseek_key(),
-    reason="DEEPSEEK_API_KEY not set (or placeholder); skipping live API call",
+    reason=(
+        "RUN_LIVE_DEEPSEEK_TESTS=1 and a non-placeholder DEEPSEEK_API_KEY "
+        "are required; skipping live API call"
+    ),
 )
 class TestDeepSeekLiveStructuredOutput:
     """End-to-end: a real DeepSeek V4-flash call returns a typed instance.
