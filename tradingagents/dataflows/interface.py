@@ -78,9 +78,18 @@ TRANSIENT_VENDOR_ERRORS = (
     YFRateLimitError,
     requests.Timeout,
     requests.ConnectionError,
-    requests.HTTPError,
     TimeoutError,
 )
+
+
+def _is_transient_http_error(error: requests.HTTPError) -> bool:
+    """Return True only for HTTP statuses that are reasonable to retry/fallback."""
+    response = error.response
+    if response is None:
+        return False
+    status_code = response.status_code
+    return status_code == 429 or 500 <= status_code <= 599
+
 
 VENDOR_METHODS: dict[str, dict[str, VendorFunction]] = {
     # core_stock_apis
@@ -178,5 +187,9 @@ def route_to_vendor(method: str, *args, **kwargs):
             return impl_func(*args, **kwargs)
         except TRANSIENT_VENDOR_ERRORS:
             continue  # Rate limits and temporary request failures trigger fallback
+        except requests.HTTPError as exc:
+            if _is_transient_http_error(exc):
+                continue
+            raise
 
     raise RuntimeError(f"No available vendor for '{method}'")

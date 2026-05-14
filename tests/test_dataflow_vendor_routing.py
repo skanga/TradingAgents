@@ -84,6 +84,72 @@ def test_route_to_vendor_falls_back_after_connection_error(monkeypatch):
         reset_config(token)
 
 
+def _http_error(status_code: int) -> requests.HTTPError:
+    response = requests.Response()
+    response.status_code = status_code
+    error = requests.HTTPError(f"{status_code} response")
+    error.response = response
+    return error
+
+
+def test_route_to_vendor_does_not_fallback_after_permanent_http_error(monkeypatch):
+    calls = []
+    error = _http_error(403)
+
+    def primary(*args, **kwargs):
+        calls.append("primary")
+        raise error
+
+    def fallback(*args, **kwargs):
+        calls.append("fallback")
+        return "fallback result"
+
+    monkeypatch.setitem(
+        interface.VENDOR_METHODS,
+        "get_stock_data",
+        {
+            "yfinance": primary,
+            "alpha_vantage": fallback,
+        },
+    )
+    token = use_config({"data_vendors": {"core_stock_apis": "yfinance"}})
+    try:
+        with pytest.raises(requests.HTTPError) as exc_info:
+            route_to_vendor("get_stock_data", "NVDA", "2026-01-01", "2026-01-10")
+        assert exc_info.value is error
+        assert calls == ["primary"]
+    finally:
+        reset_config(token)
+
+
+@pytest.mark.parametrize("status_code", [429, 500, 502, 503, 504])
+def test_route_to_vendor_falls_back_after_transient_http_error(monkeypatch, status_code):
+    calls = []
+
+    def primary(*args, **kwargs):
+        calls.append("primary")
+        raise _http_error(status_code)
+
+    def fallback(*args, **kwargs):
+        calls.append("fallback")
+        return "fallback result"
+
+    monkeypatch.setitem(
+        interface.VENDOR_METHODS,
+        "get_stock_data",
+        {
+            "yfinance": primary,
+            "alpha_vantage": fallback,
+        },
+    )
+    token = use_config({"data_vendors": {"core_stock_apis": "yfinance"}})
+    try:
+        assert route_to_vendor("get_stock_data", "NVDA", "2026-01-01", "2026-01-10") == "fallback result"
+        assert calls == ["primary", "fallback"]
+    finally:
+        reset_config(token)
+
+
 def test_route_to_vendor_falls_back_after_yfinance_rate_limit(monkeypatch):
     calls = []
 
