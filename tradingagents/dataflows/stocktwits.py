@@ -18,7 +18,7 @@ import contextlib
 import http.client
 import json
 import logging
-from datetime import datetime
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .date_window import in_window
