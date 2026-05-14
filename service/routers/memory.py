@@ -1,12 +1,10 @@
 """Rolling decision memory log."""
 
-from __future__ import annotations
-
-import re
-
 from fastapi import APIRouter
 
-from gui.log_browser import memory_log_path, read_memory_log
+from tradingagents.agents.utils.memory import TradingMemoryLog
+from tradingagents.default_config import DEFAULT_CONFIG
+from gui.log_browser import memory_log_path
 from service.schemas import MemoryEntry, MemoryResponse
 
 router = APIRouter(prefix="/memory", tags=["memory"])
@@ -14,13 +12,12 @@ router = APIRouter(prefix="/memory", tags=["memory"])
 
 @router.get("", response_model=MemoryResponse)
 def get_memory() -> MemoryResponse:
-    raw = read_memory_log()
-    chunks = [c for c in re.split(r"^##\s+", raw, flags=re.MULTILINE) if c.strip()]
+    log = TradingMemoryLog(DEFAULT_CONFIG)
     entries: list[MemoryEntry] = []
-    for c in chunks[1:] if chunks and not chunks[0].startswith("TICKER") else chunks:
-        # Skip the header chunk if present.
-        body = "## " + c
-        entries.append(MemoryEntry(raw=body, resolved="REFLECTION:" in body))
+    for entry in log.load_entries():
+        entries.append(
+            MemoryEntry(raw=log.format_entry(entry), resolved=not entry.get("pending"))
+        )
 
     resolved = sum(1 for e in entries if e.resolved)
     return MemoryResponse(

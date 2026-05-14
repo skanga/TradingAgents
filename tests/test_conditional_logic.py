@@ -36,8 +36,33 @@ def test_debate_conditional_rejects_unexpected_current_response():
         "investment_debate_state": {
             "count": 1,
             "current_response": "",
+            "last_debater": "",
         }
     }
 
     with pytest.raises(ValueError, match="Unexpected investment debate state"):
         ConditionalLogic(max_debate_rounds=2).should_continue_debate(state)
+
+
+def test_debate_conditional_routes_from_last_debater_not_response_prefix():
+    logic = ConditionalLogic(max_debate_rounds=2)
+
+    assert logic.should_continue_debate(
+        {
+            "investment_debate_state": {
+                "count": 1,
+                "last_debater": "bull",
+                "current_response": "Optimistic case without a fixed label",
+            }
+        }
+    ) == "Bear Researcher"
+
+    assert logic.should_continue_debate(
+        {
+            "investment_debate_state": {
+                "count": 1,
+                "last_debater": "bear",
+                "current_response": "Skeptical case without a fixed label",
+            }
+        }
+    ) == "Bull Researcher"

@@ -19,6 +19,21 @@ from tradingagents.batch import (
 from tradingagents.allocation import build_allocation_plan
 
 
+class CapturingConsole:
+    def __init__(self):
+        self.messages = []
+
+    def print(self, message, *args, **kwargs):
+        self.messages.append(str(message))
+
+
+def test_batch_module_does_not_import_cli_main():
+    import tradingagents.batch as batch_module
+
+    source = Path(batch_module.__file__).read_text(encoding="utf-8")
+    assert "cli.main" not in source
+
+
 def test_load_batch_inputs_accepts_holdings_csv(tmp_path):
     csv_path = tmp_path / "portfolio.csv"
     csv_path.write_text(
@@ -220,7 +235,6 @@ def test_run_batch_analysis_preserves_explicit_empty_prices(monkeypatch, tmp_pat
         captured["prices"] = prices
         return None
 
-    monkeypatch.setattr("cli.main.run_analysis", fake_run_analysis)
     monkeypatch.setattr("tradingagents.batch.build_llm_narrative", lambda results, llm_overrides: None)
     monkeypatch.setattr("tradingagents.allocation.build_allocation_plan", fake_build_allocation_plan)
 
@@ -240,6 +254,7 @@ def test_run_batch_analysis_preserves_explicit_empty_prices(monkeypatch, tmp_pat
         dry_run=False,
         allocation_policy=None,
         prices={},
+        analysis_runner=fake_run_analysis,
     )
 
     assert captured["prices"] == {}
@@ -263,13 +278,8 @@ def test_run_batch_analysis_skips_allocation_when_failed_result_has_market_value
         captured["tickers"] = [result.ticker for result in results]
         return None
 
-    messages = []
+    console = CapturingConsole()
 
-    def fake_print(message):
-        messages.append(str(message))
-
-    monkeypatch.setattr("cli.main.run_analysis", fake_run_analysis)
-    monkeypatch.setattr("cli.main.console.print", fake_print)
     monkeypatch.setattr("tradingagents.batch.build_llm_narrative", lambda results, llm_overrides: None)
     monkeypatch.setattr("tradingagents.allocation.build_allocation_plan", fake_build_allocation_plan)
 
@@ -291,10 +301,12 @@ def test_run_batch_analysis_skips_allocation_when_failed_result_has_market_value
         allocate=True,
         dry_run=False,
         allocation_policy=None,
+        analysis_runner=fake_run_analysis,
+        console=console,
     )
 
     assert "tickers" not in captured
-    assert any("Skipping allocation" in message and "TSLA" in message for message in messages)
+    assert any("Skipping allocation" in message and "TSLA" in message for message in console.messages)
     assert not (tmp_path / "batch" / "allocation_plan.md").exists()
 
 
@@ -316,7 +328,6 @@ def test_run_batch_analysis_allocates_successes_when_failures_have_no_market_val
         captured["tickers"] = [result.ticker for result in results]
         return None
 
-    monkeypatch.setattr("cli.main.run_analysis", fake_run_analysis)
     monkeypatch.setattr("tradingagents.batch.build_llm_narrative", lambda results, llm_overrides: None)
     monkeypatch.setattr("tradingagents.allocation.build_allocation_plan", fake_build_allocation_plan)
 
@@ -338,6 +349,7 @@ def test_run_batch_analysis_allocates_successes_when_failures_have_no_market_val
         allocate=True,
         dry_run=False,
         allocation_policy=None,
+        analysis_runner=fake_run_analysis,
     )
 
     assert captured["tickers"] == ["AAPL"]
@@ -362,13 +374,8 @@ def test_run_batch_analysis_skips_allocation_when_fail_fast_stops_before_valued_
         builder_called = True
         return None
 
-    messages = []
+    console = CapturingConsole()
 
-    def fake_print(message):
-        messages.append(str(message))
-
-    monkeypatch.setattr("cli.main.run_analysis", fake_run_analysis)
-    monkeypatch.setattr("cli.main.console.print", fake_print)
     monkeypatch.setattr("tradingagents.batch.build_llm_narrative", lambda results, llm_overrides: None)
     monkeypatch.setattr("tradingagents.allocation.build_allocation_plan", fake_build_allocation_plan)
 
@@ -391,10 +398,12 @@ def test_run_batch_analysis_skips_allocation_when_fail_fast_stops_before_valued_
         allocate=True,
         dry_run=False,
         allocation_policy=None,
+        analysis_runner=fake_run_analysis,
+        console=console,
     )
 
     assert builder_called is False
-    assert any("Skipping allocation" in message and "incomplete batch" in message for message in messages)
+    assert any("Skipping allocation" in message and "incomplete batch" in message for message in console.messages)
     assert not (tmp_path / "batch" / "allocation_plan.md").exists()
 
 
@@ -409,7 +418,6 @@ def test_run_batch_analysis_skips_allocation_when_all_results_fail(monkeypatch, 
         builder_called = True
         return None
 
-    monkeypatch.setattr("cli.main.run_analysis", fake_run_analysis)
     monkeypatch.setattr("tradingagents.batch.build_llm_narrative", lambda results, llm_overrides: None)
     monkeypatch.setattr("tradingagents.allocation.build_allocation_plan", fake_build_allocation_plan)
 
@@ -428,6 +436,7 @@ def test_run_batch_analysis_skips_allocation_when_all_results_fail(monkeypatch, 
         allocate=True,
         dry_run=False,
         allocation_policy=None,
+        analysis_runner=fake_run_analysis,
     )
 
     assert builder_called is False
@@ -556,6 +565,8 @@ def test_batch_cli_dispatches_allocation_and_dry_run_options(monkeypatch, tmp_pa
         dry_run,
         allocation_policy,
         prices=None,
+        analysis_runner=None,
+        console=None,
     ):
         captured.update(locals())
         return []
@@ -625,6 +636,8 @@ def test_batch_cli_dry_run_implies_allocation(monkeypatch, tmp_path):
         dry_run,
         allocation_policy,
         prices=None,
+        analysis_runner=None,
+        console=None,
     ):
         captured.update(locals())
         return []
