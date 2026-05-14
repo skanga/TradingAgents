@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib
 
-import pytest
 
 
 # ---- openai_client side: _resolve_provider_base_url -----------------------
