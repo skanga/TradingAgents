@@ -305,12 +305,19 @@ class TradingAgentsGraph:
             )
             if raw is None or alpha is None or days is None:
                 continue  # price not available yet — try again next run
-            reflection = self.reflector.reflect_on_final_decision(
-                final_decision=entry.get("decision", ""),
-                raw_return=raw,
-                alpha_return=alpha,
-                benchmark_name=benchmark,
-            )
+            try:
+                reflection = self.reflector.reflect_on_final_decision(
+                    final_decision=entry.get("decision", ""),
+                    raw_return=raw,
+                    alpha_return=alpha,
+                    benchmark_name=benchmark,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Could not generate reflection for %s on %s (will retry next run): %s",
+                    ticker, entry["date"], e,
+                )
+                continue
             updates.append({
                 "ticker": ticker,
                 "trade_date": entry["date"],
