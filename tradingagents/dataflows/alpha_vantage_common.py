@@ -59,10 +59,8 @@ def _make_api_request(function_name: str, params: dict) -> str:
         "source": "trading_agents",
     })
     
-    # Handle entitlement parameter if present in params or global variable
-    current_entitlement = globals().get('_current_entitlement')
-    entitlement = api_params.get("entitlement") or current_entitlement
-    
+    # Keep only explicitly requested entitlement values.
+    entitlement = api_params.get("entitlement")
     if entitlement:
         api_params["entitlement"] = entitlement
     elif "entitlement" in api_params:
