@@ -2,9 +2,11 @@
 
 from typing import List, Optional
 from pathlib import Path
+import json
 import re
 import tempfile
 import threading
+import weakref
 
 from tradingagents.agents.utils.rating import parse_rating
 
@@ -14,10 +16,13 @@ class TradingMemoryLog:
 
     # HTML comment: cannot appear in LLM prose output, safe as a hard delimiter
     _SEPARATOR = "\n\n<!-- ENTRY_END -->\n\n"
+    _JSONL_VERSION = 1
     # Precompiled patterns — avoids re-compilation on every load_entries() call
     _DECISION_RE = re.compile(r"DECISION:\n(.*?)(?=\nREFLECTION:|\Z)", re.DOTALL)
     _REFLECTION_RE = re.compile(r"REFLECTION:\n(.*?)$", re.DOTALL)
-    _path_locks: dict[Path, threading.Lock] = {}
+    _path_locks: weakref.WeakValueDictionary[Path, threading.Lock] = (
+        weakref.WeakValueDictionary()
+    )
     _path_locks_guard = threading.Lock()
 
     def __init__(self, config: dict | None = None):
@@ -44,16 +49,27 @@ class TradingMemoryLog:
         if not self._log_path:
             return
         with self._path_lock():
-            text = ""
-            if self._log_path.exists():
-                text = self._log_path.read_text(encoding="utf-8")
-                for line in text.splitlines():
-                    if line.startswith(f"[{trade_date} | {ticker} |") and line.endswith("| pending]"):
-                        return
+            entries = self._read_entries_uncached()
+            for entry in entries:
+                if (
+                    entry["date"] == trade_date
+                    and entry["ticker"] == ticker
+                    and entry.get("pending")
+                ):
+                    return
             rating = parse_rating(final_trade_decision)
-            tag = f"[{trade_date} | {ticker} | {rating} | pending]"
-            entry = f"{tag}\n\nDECISION:\n{final_trade_decision}{self._SEPARATOR}"
-            self._atomic_write_text(text + entry)
+            entries.append({
+                "date": trade_date,
+                "ticker": ticker,
+                "rating": rating,
+                "pending": True,
+                "raw": None,
+                "alpha": None,
+                "holding": None,
+                "decision": final_trade_decision,
+                "reflection": "",
+            })
+            self._atomic_write_text(self._serialize_jsonl(entries))
 
     # --- Read path (Phase A) ---
 
@@ -70,13 +86,7 @@ class TradingMemoryLog:
         ):
             return [entry.copy() for entry in self._entries_cache]
 
-        text = self._log_path.read_text(encoding="utf-8")
-        raw_entries = [e.strip() for e in text.split(self._SEPARATOR) if e.strip()]
-        entries = []
-        for raw in raw_entries:
-            parsed = self._parse_entry(raw)
-            if parsed:
-                entries.append(parsed)
+        entries = self._read_entries_uncached()
         self._entries_cache_mtime_ns = mtime_ns
         self._entries_cache = [entry.copy() for entry in entries]
         return entries
@@ -113,6 +123,13 @@ class TradingMemoryLog:
             parts.extend(self._format_reflection_only(e) for e in cross)
         return "\n\n".join(parts)
 
+    def format_entry(self, entry: dict) -> str:
+        """Return a human-readable markdown view of a parsed memory entry."""
+        if not entry.get("pending"):
+            return self._format_full(entry)
+        tag = f"[{entry['date']} | {entry['ticker']} | {entry['rating']} | pending]"
+        return "\n\n".join([tag, f"DECISION:\n{entry.get('decision', '')}"])
+
     # --- Update path (Phase B) ---
 
     def batch_update_with_outcomes(self, updates: List[dict]) -> None:
@@ -124,8 +141,7 @@ class TradingMemoryLog:
         if not self._log_path or not self._log_path.exists() or not updates:
             return
 
-        text = self._log_path.read_text(encoding="utf-8")
-        blocks = text.split(self._SEPARATOR)
+        entries = self._read_entries_uncached()
 
         update_map = {}
         for update in updates:
@@ -136,52 +152,103 @@ class TradingMemoryLog:
                 )
             update_map[key] = update
 
-        new_blocks = []
-        for block in blocks:
-            stripped = block.strip()
-            if not stripped:
-                new_blocks.append(block)
+        updated_entries = []
+        for entry in entries:
+            if not entry.get("pending"):
+                updated_entries.append(entry)
                 continue
 
-            lines = stripped.splitlines()
-            tag_line = lines[0].strip()
-
-            if not (tag_line.startswith("[") and tag_line.endswith("| pending]")):
-                new_blocks.append(block)
-                continue
-
-            fields = [f.strip() for f in tag_line[1:-1].split("|")]
-            if len(fields) < 4:
-                new_blocks.append(block)
-                continue
-
-            trade_date, ticker, rating = fields[:3]
-            upd = update_map.get((trade_date, ticker))
+            upd = update_map.get((entry["date"], entry["ticker"]))
             if upd is None:
-                new_blocks.append(block)
+                updated_entries.append(entry)
                 continue
 
-            raw_pct = f"{upd['raw_return']:+.1%}"
-            alpha_pct = f"{upd['alpha_return']:+.1%}"
-            new_tag = (
-                f"[{trade_date} | {ticker} | {rating}"
-                f" | {raw_pct} | {alpha_pct} | {upd['holding_days']}d]"
-            )
-            rest = "\n".join(lines[1:])
-            new_blocks.append(
-                f"{new_tag}\n\n{rest.lstrip()}\n\nREFLECTION:\n{upd['reflection']}"
-            )
-            del update_map[(trade_date, ticker)]
+            entry = entry.copy()
+            entry.update({
+                "pending": False,
+                "raw": f"{upd['raw_return']:+.1%}",
+                "alpha": f"{upd['alpha_return']:+.1%}",
+                "holding": f"{upd['holding_days']}d",
+                "reflection": upd["reflection"],
+            })
+            updated_entries.append(entry)
+            del update_map[(entry["date"], entry["ticker"])]
 
-        new_blocks = self._apply_rotation(new_blocks)
-        new_text = self._SEPARATOR.join(new_blocks)
-        self._atomic_write_text(new_text)
+        updated_entries = self._apply_rotation_entries(updated_entries)
+        self._atomic_write_text(self._serialize_jsonl(updated_entries))
 
     # --- Helpers ---
 
     def _invalidate_entries_cache(self) -> None:
         self._entries_cache_mtime_ns = None
         self._entries_cache = None
+
+    def _read_entries_uncached(self) -> List[dict]:
+        if not self._log_path or not self._log_path.exists():
+            return []
+
+        text = self._log_path.read_text(encoding="utf-8")
+        json_entries: List[dict] = []
+        legacy_lines: list[str] = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("{") and stripped.endswith("}"):
+                parsed = self._parse_jsonl_entry(stripped)
+                if parsed:
+                    json_entries.append(parsed)
+                    continue
+            legacy_lines.append(line)
+
+        legacy_text = "\n".join(legacy_lines)
+        legacy_entries = []
+        raw_entries = [e.strip() for e in legacy_text.split(self._SEPARATOR) if e.strip()]
+        for raw in raw_entries:
+            parsed = self._parse_legacy_entry(raw)
+            if parsed:
+                legacy_entries.append(parsed)
+        return legacy_entries + json_entries
+
+    def _serialize_jsonl(self, entries: List[dict]) -> str:
+        lines = []
+        for entry in entries:
+            payload = {
+                "version": self._JSONL_VERSION,
+                "date": entry["date"],
+                "ticker": entry["ticker"],
+                "rating": entry["rating"],
+                "pending": bool(entry.get("pending")),
+                "raw": entry.get("raw"),
+                "alpha": entry.get("alpha"),
+                "holding": entry.get("holding"),
+                "decision": entry.get("decision", ""),
+                "reflection": entry.get("reflection", ""),
+            }
+            lines.append(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        return "\n".join(lines) + ("\n" if lines else "")
+
+    def _parse_jsonl_entry(self, line: str) -> Optional[dict]:
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+
+        required = ("date", "ticker", "rating", "pending")
+        if any(key not in payload for key in required):
+            return None
+
+        return {
+            "date": str(payload["date"]),
+            "ticker": str(payload["ticker"]),
+            "rating": str(payload["rating"]),
+            "pending": bool(payload["pending"]),
+            "raw": payload.get("raw"),
+            "alpha": payload.get("alpha"),
+            "holding": payload.get("holding"),
+            "decision": str(payload.get("decision", "")),
+            "reflection": str(payload.get("reflection", "")),
+        }
 
     def _path_lock(self) -> threading.Lock:
         assert self._log_path is not None
@@ -216,61 +283,46 @@ class TradingMemoryLog:
             if tmp_path.exists():
                 tmp_path.unlink()
 
-    def _apply_rotation(self, blocks: List[str]) -> List[str]:
-        """Drop oldest resolved blocks when their count exceeds max_entries.
+    def _apply_rotation_entries(self, entries: List[dict]) -> List[dict]:
+        """Drop oldest resolved entries when their count exceeds max_entries.
 
-        Pending blocks are always kept (they represent unprocessed work).
-        Returns ``blocks`` unchanged when rotation is disabled or under cap.
+        Pending entries are always kept (they represent unprocessed work).
+        Returns ``entries`` unchanged when rotation is disabled or under cap.
         """
         if not self._max_entries or self._max_entries <= 0:
-            return blocks
+            return entries
 
-        # Tag each block with (kept, is_resolved) by parsing tag-line markers.
-        decisions = []
-        for block in blocks:
-            stripped = block.strip()
-            if not stripped:
-                decisions.append((block, False))
-                continue
-            tag_line = stripped.splitlines()[0].strip()
-            is_resolved = (
-                tag_line.startswith("[")
-                and tag_line.endswith("]")
-                and not tag_line.endswith("| pending]")
-            )
-            decisions.append((block, is_resolved))
-
-        resolved_count = sum(1 for _, r in decisions if r)
+        resolved_count = sum(1 for entry in entries if not entry.get("pending"))
         if resolved_count <= self._max_entries:
-            return blocks
+            return entries
 
         to_drop = resolved_count - self._max_entries
-        kept: List[str] = []
-        for block, is_resolved in decisions:
-            if is_resolved and to_drop > 0:
+        kept: List[dict] = []
+        for entry in entries:
+            if not entry.get("pending") and to_drop > 0:
                 to_drop -= 1
                 continue
-            kept.append(block)
+            kept.append(entry)
         return kept
 
-    def _parse_entry(self, raw: str) -> Optional[dict]:
+    def _parse_legacy_entry(self, raw: str) -> Optional[dict]:
         lines = raw.strip().splitlines()
         if not lines:
             return None
         tag_line = lines[0].strip()
         if not (tag_line.startswith("[") and tag_line.endswith("]")):
             return None
-        fields = [f.strip() for f in tag_line[1:-1].split("|")]
-        if len(fields) < 4:
+        fields = self._parse_legacy_tag(tag_line)
+        if not fields:
             return None
         entry = {
-            "date": fields[0],
-            "ticker": fields[1],
-            "rating": fields[2],
-            "pending": fields[3] == "pending",
-            "raw": fields[3] if fields[3] != "pending" else None,
-            "alpha": fields[4] if len(fields) > 4 else None,
-            "holding": fields[5] if len(fields) > 5 else None,
+            "date": fields["date"],
+            "ticker": fields["ticker"],
+            "rating": fields["rating"],
+            "pending": fields["pending"],
+            "raw": fields["raw"],
+            "alpha": fields["alpha"],
+            "holding": fields["holding"],
         }
         body = "\n".join(lines[1:]).strip()
         decision_match = self._DECISION_RE.search(body)
@@ -278,6 +330,33 @@ class TradingMemoryLog:
         entry["decision"] = decision_match.group(1).strip() if decision_match else ""
         entry["reflection"] = reflection_match.group(1).strip() if reflection_match else ""
         return entry
+
+    def _parse_legacy_tag(self, tag_line: str) -> Optional[dict]:
+        if not (tag_line.startswith("[") and tag_line.endswith("]")):
+            return None
+
+        parts = [part.strip() for part in tag_line[1:-1].split(" | ")]
+        if len(parts) == 4 and parts[3] == "pending":
+            return {
+                "date": parts[0],
+                "ticker": parts[1],
+                "rating": parts[2],
+                "pending": True,
+                "raw": None,
+                "alpha": None,
+                "holding": None,
+            }
+        if len(parts) >= 6:
+            return {
+                "date": parts[0],
+                "ticker": parts[1],
+                "rating": parts[2],
+                "pending": False,
+                "raw": parts[3],
+                "alpha": parts[4],
+                "holding": parts[5],
+            }
+        return None
 
     def _format_full(self, e: dict) -> str:
         raw = e["raw"] or "n/a"

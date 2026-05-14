@@ -17,9 +17,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, Sequence
 
 from markdown_it import MarkdownIt
 
-from cli.llm_config import LLMConfigOverrides
-from cli.models import AnalystType
-from cli.utils import normalize_ticker_symbol
+from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.agents.utils.rating import parse_rating
 
 if TYPE_CHECKING:
@@ -37,6 +35,31 @@ RATING_RANK = {
 
 class ConsoleLike(Protocol):
     def print(self, *objects: Any, **kwargs: Any) -> None: ...
+
+
+@dataclass(frozen=True)
+class SelectionOverrides:
+    ticker: str | None = None
+    analysis_date: str | None = None
+    output_language: str | None = None
+    analysts: list[Any] | None = None
+    research_depth: int | None = None
+    save_report: bool | None = None
+    save_path: Path | None = None
+    display_report: bool | None = None
+
+
+@dataclass(frozen=True)
+class AnalysisRunResult:
+    ticker: str
+    final_state: dict[str, Any]
+    report_path: Path | None = None
+    save_path: Path | None = None
+
+
+class _SilentConsole:
+    def print(self, *objects: Any, **kwargs: Any) -> None:
+        return None
 
 
 @dataclass(frozen=True)
@@ -69,7 +92,7 @@ def parse_ticker_list(value: str) -> list[PortfolioHolding]:
         if not ticker:
             continue
         try:
-            holdings.append(PortfolioHolding(ticker=normalize_ticker_symbol(ticker)))
+            holdings.append(PortfolioHolding(ticker=_normalize_ticker_symbol(ticker)))
         except ValueError as exc:
             raise ValueError(f"Invalid ticker {ticker!r}: {exc}") from exc
     if not holdings:
@@ -117,7 +140,7 @@ def _holding_from_row(row: dict, row_number: int) -> PortfolioHolding:
     if not raw_ticker:
         raise ValueError(f"Row {row_number} is missing ticker.")
     try:
-        ticker = normalize_ticker_symbol(raw_ticker)
+        ticker = _normalize_ticker_symbol(raw_ticker)
     except ValueError as exc:
         raise ValueError(f"Invalid ticker on row {row_number}: {exc}") from exc
 
@@ -140,6 +163,10 @@ def _optional_str(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalize_ticker_symbol(ticker: str) -> str:
+    return safe_ticker_component(ticker.strip().upper())
 
 
 def _optional_float(value: object, field_name: str, row_number: int) -> float | None:
@@ -307,10 +334,10 @@ def run_batch_analysis(
     holdings: Sequence[PortfolioHolding],
     analysis_date: str,
     output_language: str,
-    analysts: list[AnalystType],
+    analysts: list[Any],
     research_depth: int,
     checkpoint: bool,
-    llm_overrides: LLMConfigOverrides,
+    llm_overrides: Any,
     save_path: Path,
     display_report: bool,
     continue_on_error: bool,
@@ -319,8 +346,12 @@ def run_batch_analysis(
     dry_run: bool = False,
     allocation_policy: "AllocationPolicy | None" = None,
     prices: dict[str, float] | None = None,
+    analysis_runner: Callable[..., AnalysisRunResult] | None = None,
+    console: ConsoleLike | None = None,
 ) -> list[BatchTickerResult]:
-    from cli.main import SelectionOverrides, console, run_analysis
+    if analysis_runner is None:
+        raise ValueError("analysis_runner is required for batch analysis.")
+    console = console or _SilentConsole()
 
     results: list[BatchTickerResult] = []
     save_path.mkdir(parents=True, exist_ok=True)
@@ -328,7 +359,7 @@ def run_batch_analysis(
         started = time.time()
         try:
             console.print(f"[bold cyan]Batch analyzing {holding.ticker}[/bold cyan]")
-            analysis_result = run_analysis(
+            analysis_result = analysis_runner(
                 checkpoint=checkpoint,
                 llm_overrides=llm_overrides,
                 selection_overrides=SelectionOverrides(
@@ -466,8 +497,8 @@ def _print_dry_run_table(console: ConsoleLike, allocation_plan: "AllocationPlan"
 
 def build_llm_narrative(
     results: Sequence[BatchTickerResult],
-    llm_overrides: LLMConfigOverrides,
-    llm_factory: Callable[[LLMConfigOverrides], object] | None = None,
+    llm_overrides: Any,
+    llm_factory: Callable[[Any], object] | None = None,
 ) -> str | None:
     successes = [r for r in results if r.status == "success"]
     if not successes:

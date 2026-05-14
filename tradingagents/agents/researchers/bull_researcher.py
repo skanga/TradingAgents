@@ -36,6 +36,7 @@ def create_bull_researcher(llm):
             "bull_history": bull_history + "\n" + argument,
             "bear_history": investment_debate_state.get("bear_history", ""),
             "current_response": argument,
+            "last_debater": "bull",
             "count": investment_debate_state["count"] + 1,
         }
 

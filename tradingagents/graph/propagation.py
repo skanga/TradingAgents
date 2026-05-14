@@ -29,6 +29,7 @@ class Propagator:
                     "bear_history": "",
                     "history": "",
                     "current_response": "",
+                    "last_debater": None,
                     "judge_decision": "",
                     "count": 0,
                 }

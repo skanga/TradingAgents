@@ -1,4 +1,5 @@
 from typing import Annotated
+from typing_extensions import NotRequired
 from typing_extensions import TypedDict
 from langgraph.graph import MessagesState
 
@@ -13,6 +14,7 @@ class InvestDebateState(TypedDict):
     ]  # Bullish Conversation history
     history: Annotated[str, "Conversation history"]  # Conversation history
     current_response: Annotated[str, "Latest response"]  # Last response
+    last_debater: NotRequired[Annotated[str, "Debater that produced the latest response"]]
     judge_decision: Annotated[str, "Final judge decision"]  # Last response
     count: Annotated[int, "Length of the current conversation"]  # Conversation length
 

@@ -2,7 +2,6 @@ import datetime
 from html import escape
 import time
 from collections import deque
-from dataclasses import dataclass
 import questionary
 from pathlib import Path
 from typing import Any, TypedDict, cast
@@ -45,8 +44,10 @@ from cli.utils import (
     select_shallow_thinking_agent,
 )
 from tradingagents.batch import (
+    AnalysisRunResult,
     load_batch_inputs,
     run_batch_analysis,
+    SelectionOverrides,
 )
 from tradingagents.allocation import AllocationPolicy
 from tradingagents.charts import ChartArtifact, generate_report_charts
@@ -67,26 +68,6 @@ app = typer.Typer(
     help="TradingAgents CLI: Multi-Agents LLM Financial Trading Framework",
     add_completion=True,  # Enable shell completion
 )
-
-
-@dataclass(frozen=True)
-class SelectionOverrides:
-    ticker: str | None = None
-    analysis_date: str | None = None
-    output_language: str | None = None
-    analysts: list[AnalystType] | None = None
-    research_depth: int | None = None
-    save_report: bool | None = None
-    save_path: Path | None = None
-    display_report: bool | None = None
-
-
-@dataclass(frozen=True)
-class AnalysisRunResult:
-    ticker: str
-    final_state: dict[str, Any]
-    report_path: Path | None = None
-    save_path: Path | None = None
 
 
 def _execution_orders_from_allocation_plan(allocation_plan: Any) -> list[ExecutionOrder]:
@@ -2167,6 +2148,8 @@ def batch_command(
             min_cash_weight=min_cash_weight,
         ),
         prices=None,
+        analysis_runner=run_analysis,
+        console=console,
     )
 
 

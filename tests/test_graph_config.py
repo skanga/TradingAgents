@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from tradingagents.default_config import DEFAULT_CONFIG
-from tradingagents.graph.setup import GraphSetup
+from tradingagents.graph.conditional_logic import ConditionalLogic
+from tradingagents.graph.setup import ANALYST_SPECS, GraphSetup
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 
 
@@ -81,6 +82,36 @@ def test_graph_selected_analysts_defaults_are_not_mutable_lists():
 
     assert graph_default is None
     assert setup_default is None
+
+
+def test_graph_setup_uses_explicit_analyst_specs():
+    logic = ConditionalLogic()
+
+    assert ANALYST_SPECS["market"].node_name == "Market Analyst"
+    assert ANALYST_SPECS["market"].clear_name == "Msg Clear Market"
+    assert ANALYST_SPECS["market"].tool_name == "tools_market"
+    assert (
+        ANALYST_SPECS["market"].continue_fn(logic).__func__
+        is ConditionalLogic.should_continue_market
+    )
+
+    assert ANALYST_SPECS["social"].node_name == "Social Analyst"
+    assert (
+        ANALYST_SPECS["social"].continue_fn(logic).__func__
+        is ConditionalLogic.should_continue_social
+    )
+
+
+def test_graph_setup_rejects_unknown_analyst_key():
+    setup = GraphSetup(
+        quick_thinking_llm=MagicMock(),
+        deep_thinking_llm=MagicMock(),
+        tool_nodes={},
+        conditional_logic=ConditionalLogic(),
+    )
+
+    with pytest.raises(ValueError, match="unknown analyst key 'crypto_news'"):
+        setup.setup_graph(["crypto_news"])
 
 
 def test_graph_propagate_rejects_unsafe_ticker_before_work():

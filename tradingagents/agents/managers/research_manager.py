@@ -42,6 +42,7 @@ def create_research_manager(llm):
             "bear_history": investment_debate_state.get("bear_history", ""),
             "bull_history": investment_debate_state.get("bull_history", ""),
             "current_response": investment_plan,
+            "last_debater": investment_debate_state.get("last_debater"),
             "count": investment_debate_state["count"],
         }
 

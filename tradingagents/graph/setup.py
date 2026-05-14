@@ -1,6 +1,7 @@
 # TradingAgents/graph/setup.py
 
-from typing import Any, Dict
+from dataclasses import dataclass
+from typing import Any, Callable, Dict
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -22,6 +23,47 @@ from tradingagents.agents import (
 from tradingagents.agents.utils.agent_states import AgentState
 
 from .conditional_logic import ConditionalLogic
+
+
+@dataclass(frozen=True)
+class AnalystSpec:
+    node_name: str
+    clear_name: str
+    tool_name: str
+    create_node: Callable[[Any], Callable[..., dict]]
+    continue_fn: Callable[[ConditionalLogic], Callable[..., str]]
+
+
+ANALYST_SPECS: dict[str, AnalystSpec] = {
+    "market": AnalystSpec(
+        node_name="Market Analyst",
+        clear_name="Msg Clear Market",
+        tool_name="tools_market",
+        create_node=create_market_analyst,
+        continue_fn=lambda logic: logic.should_continue_market,
+    ),
+    "social": AnalystSpec(
+        node_name="Social Analyst",
+        clear_name="Msg Clear Social",
+        tool_name="tools_social",
+        create_node=create_sentiment_analyst,
+        continue_fn=lambda logic: logic.should_continue_social,
+    ),
+    "news": AnalystSpec(
+        node_name="News Analyst",
+        clear_name="Msg Clear News",
+        tool_name="tools_news",
+        create_node=create_news_analyst,
+        continue_fn=lambda logic: logic.should_continue_news,
+    ),
+    "fundamentals": AnalystSpec(
+        node_name="Fundamentals Analyst",
+        clear_name="Msg Clear Fundamentals",
+        tool_name="tools_fundamentals",
+        create_node=create_fundamentals_analyst,
+        continue_fn=lambda logic: logic.should_continue_fundamentals,
+    ),
+}
 
 
 class GraphSetup:
@@ -63,42 +105,27 @@ class GraphSetup:
         if len(selected_analysts) == 0:
             raise ValueError("Trading Agents Graph Setup Error: no analysts selected!")
 
+        unknown_analysts = [
+            analyst for analyst in selected_analysts if analyst not in ANALYST_SPECS
+        ]
+        if unknown_analysts:
+            unknown = unknown_analysts[0]
+            allowed = ", ".join(ANALYST_SPECS)
+            raise ValueError(
+                f"Trading Agents Graph Setup Error: unknown analyst key {unknown!r}. "
+                f"Allowed analyst keys: {allowed}"
+            )
+
         # Create analyst nodes
         analyst_nodes = {}
         delete_nodes = {}
         tool_nodes = {}
 
-        if "market" in selected_analysts:
-            analyst_nodes["market"] = create_market_analyst(
-                self.quick_thinking_llm
-            )
-            delete_nodes["market"] = create_msg_delete()
-            tool_nodes["market"] = self.tool_nodes["market"]
-
-        if "social" in selected_analysts:
-            # "social" selector key preserved for back-compat with existing
-            # user configs; the underlying agent has been renamed to
-            # sentiment_analyst (the old name advertised social-media data
-            # the agent never had access to — see issue #557).
-            analyst_nodes["social"] = create_sentiment_analyst(
-                self.quick_thinking_llm
-            )
-            delete_nodes["social"] = create_msg_delete()
-            tool_nodes["social"] = self.tool_nodes["social"]
-
-        if "news" in selected_analysts:
-            analyst_nodes["news"] = create_news_analyst(
-                self.quick_thinking_llm
-            )
-            delete_nodes["news"] = create_msg_delete()
-            tool_nodes["news"] = self.tool_nodes["news"]
-
-        if "fundamentals" in selected_analysts:
-            analyst_nodes["fundamentals"] = create_fundamentals_analyst(
-                self.quick_thinking_llm
-            )
-            delete_nodes["fundamentals"] = create_msg_delete()
-            tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
+        for analyst_type in selected_analysts:
+            spec = ANALYST_SPECS[analyst_type]
+            analyst_nodes[analyst_type] = spec.create_node(self.quick_thinking_llm)
+            delete_nodes[analyst_type] = create_msg_delete()
+            tool_nodes[analyst_type] = self.tool_nodes[analyst_type]
 
         # Create researcher and manager nodes
         bull_researcher_node = create_bull_researcher(self.quick_thinking_llm)
@@ -117,11 +144,10 @@ class GraphSetup:
 
         # Add analyst nodes to the graph
         for analyst_type, node in analyst_nodes.items():
-            workflow.add_node(f"{analyst_type.capitalize()} Analyst", node)
-            workflow.add_node(
-                f"Msg Clear {analyst_type.capitalize()}", delete_nodes[analyst_type]
-            )
-            workflow.add_node(f"tools_{analyst_type}", tool_nodes[analyst_type])
+            spec = ANALYST_SPECS[analyst_type]
+            workflow.add_node(spec.node_name, node)
+            workflow.add_node(spec.clear_name, delete_nodes[analyst_type])
+            workflow.add_node(spec.tool_name, tool_nodes[analyst_type])
 
         # Add other nodes
         workflow.add_node("Bull Researcher", bull_researcher_node)
@@ -136,25 +162,26 @@ class GraphSetup:
         # Define edges
         # Start with the first analyst
         first_analyst = selected_analysts[0]
-        workflow.add_edge(START, f"{first_analyst.capitalize()} Analyst")
+        workflow.add_edge(START, ANALYST_SPECS[first_analyst].node_name)
 
         # Connect analysts in sequence
         for i, analyst_type in enumerate(selected_analysts):
-            current_analyst = f"{analyst_type.capitalize()} Analyst"
-            current_tools = f"tools_{analyst_type}"
-            current_clear = f"Msg Clear {analyst_type.capitalize()}"
+            spec = ANALYST_SPECS[analyst_type]
+            current_analyst = spec.node_name
+            current_tools = spec.tool_name
+            current_clear = spec.clear_name
 
             # Add conditional edges for current analyst
             workflow.add_conditional_edges(
                 current_analyst,
-                getattr(self.conditional_logic, f"should_continue_{analyst_type}"),
+                spec.continue_fn(self.conditional_logic),
                 [current_tools, current_clear],
             )
             workflow.add_edge(current_tools, current_analyst)
 
             # Connect to next analyst or to Bull Researcher if this is the last analyst
             if i < len(selected_analysts) - 1:
-                next_analyst = f"{selected_analysts[i+1].capitalize()} Analyst"
+                next_analyst = ANALYST_SPECS[selected_analysts[i + 1]].node_name
                 workflow.add_edge(current_clear, next_analyst)
             else:
                 workflow.add_edge(current_clear, "Bull Researcher")

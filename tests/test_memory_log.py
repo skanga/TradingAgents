@@ -4,6 +4,7 @@ import pytest
 import pandas as pd
 import json
 import threading
+import weakref
 from unittest.mock import MagicMock, patch
 
 from tradingagents.agents.utils.memory import TradingMemoryLog
@@ -190,6 +191,22 @@ class TestTradingMemoryLogCore:
         entries = make_log(tmp_path).load_entries()
         assert {entry["ticker"] for entry in entries} == set(tickers)
 
+    def test_path_lock_registry_releases_unused_paths(self, tmp_path):
+        """Path locks should not be permanently retained for every configured path."""
+        lock_path = (tmp_path / "temporary-memory.md").resolve()
+        log = TradingMemoryLog({"memory_log_path": str(lock_path)})
+        lock = log._path_lock()
+        lock_ref = weakref.ref(lock)
+
+        assert lock_ref() is not None
+        assert lock_path in TradingMemoryLog._path_locks
+
+        del lock
+        del log
+
+        assert lock_ref() is None
+        assert lock_path not in TradingMemoryLog._path_locks
+
     def test_batch_update_resolves_multiple_entries(self, tmp_path):
         """batch_update_with_outcomes resolves multiple pending entries in one write."""
         log = make_log(tmp_path)
@@ -235,6 +252,48 @@ class TestTradingMemoryLogCore:
         assert a_entry["pending"] is False
         assert aa_entry["pending"] is True
 
+    def test_pipe_in_ticker_roundtrips_through_jsonl_storage(self, tmp_path):
+        """Structured storage must not parse ticker symbols by splitting on pipe."""
+        log = make_log(tmp_path)
+        log.store_decision("BRK|B", "2026-01-10", DECISION_BUY)
+
+        pending = log.get_pending_entries()
+        assert len(pending) == 1
+        assert pending[0]["ticker"] == "BRK|B"
+
+        log.batch_update_with_outcomes([
+            {
+                "ticker": "BRK|B",
+                "trade_date": "2026-01-10",
+                "raw_return": 0.05,
+                "alpha_return": 0.02,
+                "holding_days": 5,
+                "reflection": "Pipe-safe reflection | still one field.",
+            }
+        ])
+
+        entries = log.load_entries()
+        assert len(entries) == 1
+        assert entries[0]["ticker"] == "BRK|B"
+        assert entries[0]["pending"] is False
+        assert entries[0]["reflection"] == "Pipe-safe reflection | still one field."
+
+    def test_legacy_markdown_ticker_with_pipe_loads(self, tmp_path):
+        """Legacy markdown parsing handles ticker pipes that are not field delimiters."""
+        (tmp_path / "trading_memory.md").write_text(
+            (
+                "[2026-01-10 | BRK|B | Buy | pending]\n\n"
+                f"DECISION:\n{DECISION_BUY}"
+                + _SEP
+            ),
+            encoding="utf-8",
+        )
+
+        entries = make_log(tmp_path).load_entries()
+        assert len(entries) == 1
+        assert entries[0]["ticker"] == "BRK|B"
+        assert entries[0]["pending"] is True
+
     def test_batch_update_rejects_duplicate_update_keys(self, tmp_path):
         """Duplicate updates for one pending tag should be explicit, not last-writer-wins."""
         log = make_log(tmp_path)
@@ -264,11 +323,16 @@ class TestTradingMemoryLogCore:
 
         assert log.load_entries()[0]["pending"] is True
 
-    def test_pending_tag_format(self, tmp_path):
+    def test_pending_entry_is_jsonl(self, tmp_path):
         log = make_log(tmp_path)
         log.store_decision("NVDA", "2026-01-10", DECISION_BUY)
         text = (tmp_path / "trading_memory.md").read_text(encoding="utf-8")
-        assert "[2026-01-10 | NVDA | Buy | pending]" in text
+        payload = json.loads(text)
+        assert payload["version"] == 1
+        assert payload["date"] == "2026-01-10"
+        assert payload["ticker"] == "NVDA"
+        assert payload["rating"] == "Buy"
+        assert payload["pending"] is True
 
     # Rating parsing
 
@@ -611,8 +675,8 @@ class TestDeferredReflection:
             "reflection": "Reflection",
         }])
 
-    def test_formatting_roundtrip_after_batch_update(self, tmp_path):
-        """All fields intact and blank line between tag and DECISION preserved after update."""
+    def test_jsonl_roundtrip_after_batch_update(self, tmp_path):
+        """All structured fields stay intact after an outcome update."""
         log = make_log(tmp_path)
         log.store_decision("NVDA", "2026-01-10", DECISION_BUY)
         log.batch_update_with_outcomes([{
@@ -633,7 +697,13 @@ class TestDeferredReflection:
         assert e["alpha"] == "+2.1%"
         assert e["holding"] == "5d"
         raw_text = (tmp_path / "trading_memory.md").read_text(encoding="utf-8")
-        assert "[2026-01-10 | NVDA | Buy | +4.2% | +2.1% | 5d]\n\nDECISION:" in raw_text
+        payload = json.loads(raw_text)
+        assert payload["pending"] is False
+        assert payload["raw"] == "+4.2%"
+        assert payload["alpha"] == "+2.1%"
+        assert payload["holding"] == "5d"
+        assert payload["decision"] == DECISION_BUY
+        assert payload["reflection"] == "Momentum confirmed."
 
     # Reflector.reflect_on_final_decision
 
