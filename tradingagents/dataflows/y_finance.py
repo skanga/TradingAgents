@@ -1,9 +1,18 @@
 from datetime import datetime
-from typing import Annotated
-
+from dateutil.relativedelta import relativedelta
+import logging
 import pandas as pd
 import yfinance as yf
 from .stockstats_utils import StockstatsUtils, yf_retry, load_ohlcv, filter_financials_by_date
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_api_date(value: str, field_name: str) -> datetime:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must use YYYY-MM-DD format, got {value!r}") from exc
 
 def get_YFin_data_online(
     symbol: Annotated[str, "ticker symbol of the company"],
@@ -11,8 +20,8 @@ def get_YFin_data_online(
     end_date: Annotated[str, "End date in yyyy-mm-dd format"],
 ):
 
-    datetime.strptime(start_date, "%Y-%m-%d")
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    _parse_api_date(start_date, "start_date")
+    _parse_api_date(end_date, "end_date")
 
     # Resolve broker/forex symbols to Yahoo's convention (XAUUSD+ -> GC=F).
     canonical = normalize_symbol(symbol)
@@ -178,7 +187,7 @@ def get_stock_stats_indicators_window(
     except NoMarketDataError:
         raise  # Unknown/delisted symbol — let the router emit the sentinel
     except Exception as e:
-        print(f"Error getting bulk stockstats data: {e}")
+        logger.warning("Error getting bulk stockstats data: %s", e)
         # Fallback to original implementation if bulk method fails
         ind_string = ""
         curr_date_dt = datetime.strptime(curr_date, "%Y-%m-%d")
@@ -244,8 +253,11 @@ def get_stockstats_indicator(
     except NoMarketDataError:
         raise  # Unknown/delisted symbol — let the router emit the sentinel
     except Exception as e:
-        print(
-            f"Error getting stockstats indicator data for indicator {indicator} on {curr_date}: {e}"
+        logger.warning(
+            "Error getting stockstats indicator data for indicator %s on %s: %s",
+            indicator,
+            curr_date,
+            e,
         )
         return ""
 

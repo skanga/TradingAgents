@@ -663,3 +663,29 @@ def test_batch_cli_dry_run_implies_allocation(monkeypatch, tmp_path):
     assert result.exit_code == 0, result.output
     assert captured["allocate"] is True
     assert captured["dry_run"] is True
+
+
+def test_build_llm_narrative_logs_generation_failure(caplog):
+    from tradingagents.batch import BatchTickerResult, build_llm_narrative
+
+    class FailingLLM:
+        def invoke(self, prompt):
+            raise RuntimeError("llm offline")
+
+    result = build_llm_narrative(
+        [
+            BatchTickerResult(
+                ticker="NVDA",
+                status="success",
+                rating="Buy",
+                trader_action="Buy",
+                executive_summary="Summary",
+            )
+        ],
+        llm_overrides=object(),
+        llm_factory=lambda overrides: FailingLLM(),
+    )
+
+    assert result is None
+    assert "LLM narrative generation failed" in caplog.text
+    assert "llm offline" in caplog.text
