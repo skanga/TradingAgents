@@ -394,18 +394,17 @@ class TradingAgentsGraph:
             args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = tid
 
         if self.debug:
-            trace = []
+            saw_chunk = False
             for chunk in self.graph.stream(init_agent_state, **args):
-                if len(chunk["messages"]) != 0:
-                    chunk["messages"][-1].pretty_print()
-                trace.append(chunk)
-            if not trace:
+                saw_chunk = True
+                messages = chunk.get("messages") or []
+                if messages:
+                    messages[-1].pretty_print()
+            if not saw_chunk:
                 raise RuntimeError("Graph stream produced no chunks")
-            # Streamed chunks are per-node deltas. Merge them so the returned
-            # state matches what graph.invoke() yields in the non-debug path.
-            final_state = {}
-            for chunk in trace:
-                final_state.update(chunk)
+            # Streamed chunks can be per-node deltas; read the compiled graph's
+            # reducer-applied state so debug mode matches graph.invoke().
+            final_state = self.graph.get_state(args.get("config", {})).values
         else:
             final_state = self.graph.invoke(init_agent_state, **args)
 

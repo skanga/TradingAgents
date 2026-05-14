@@ -1127,6 +1127,7 @@ class TestLegacyRemoval:
         mock_graph.debug = True
         mock_graph.config = {"results_dir": str(tmp_path)}
         mock_graph.graph.stream.return_value = [fake_state]
+        mock_graph.graph.get_state.return_value.values = fake_state
         mock_graph.propagator.create_initial_state.return_value = fake_state
         mock_graph.propagator.get_graph_args.return_value = {}
         mock_graph.process_signal.return_value = "Buy"
@@ -1135,6 +1136,7 @@ class TestLegacyRemoval:
 
         assert state == fake_state
         assert decision == "Buy"
+        mock_graph.graph.get_state.assert_called_once_with({})
 
     def test_debug_stream_pretty_prints_non_empty_messages(self, tmp_path):
         """Debug mode should stream chunks, pretty-print messages, and use the latest state."""
@@ -1167,6 +1169,7 @@ class TestLegacyRemoval:
         mock_graph.debug = True
         mock_graph.config = {"results_dir": str(tmp_path)}
         mock_graph.graph.stream.return_value = [fake_state]
+        mock_graph.graph.get_state.return_value.values = fake_state
         mock_graph.propagator.create_initial_state.return_value = fake_state
         mock_graph.propagator.get_graph_args.return_value = {}
         mock_graph.process_signal.return_value = "Sell"
@@ -1175,7 +1178,66 @@ class TestLegacyRemoval:
 
         assert state == fake_state
         assert decision == "Sell"
+        mock_graph.graph.get_state.assert_called_once_with({})
         message.pretty_print.assert_called_once_with()
+
+    def test_debug_stream_uses_graph_state_snapshot_after_streaming(self, tmp_path):
+        """Debug mode should use reducer-applied graph state, not shallow-merged chunks."""
+        final_state = {
+            "messages": [],
+            "final_trade_decision": "Rating: Hold\nHold NVDA.",
+            "company_of_interest": "NVDA",
+            "trade_date": "2026-01-10",
+            "market_report": "market",
+            "sentiment_report": "",
+            "news_report": "",
+            "fundamentals_report": "",
+            "investment_debate_state": {
+                "bull_history": "bull",
+                "bear_history": "bear",
+                "history": "bull\nbear",
+                "current_response": "bear",
+                "judge_decision": "balanced",
+            },
+            "investment_plan": "",
+            "trader_investment_plan": "",
+            "risk_debate_state": {
+                "aggressive_history": "", "conservative_history": "",
+                "neutral_history": "", "history": "", "judge_decision": "",
+                "current_aggressive_response": "", "current_conservative_response": "",
+                "current_neutral_response": "", "count": 1, "latest_speaker": "",
+            },
+        }
+        shallow_merged_chunks = {
+            **final_state,
+            "final_trade_decision": "Rating: Sell\nSell NVDA.",
+            "investment_debate_state": {"bear_history": "bear"},
+        }
+        graph_args = {"stream_mode": "values", "config": {"recursion_limit": 3}}
+        mock_graph = MagicMock()
+        mock_graph.memory_log = TradingMemoryLog({"memory_log_path": str(tmp_path / "mem.md")})
+        mock_graph.log_states_dict = {}
+        mock_graph.debug = True
+        mock_graph.config = {"results_dir": str(tmp_path)}
+        mock_graph.graph.stream.return_value = [
+            {"messages": [], "investment_debate_state": {"bull_history": "bull"}},
+            {"messages": [], "investment_debate_state": {"bear_history": "bear"}},
+            shallow_merged_chunks,
+        ]
+        mock_graph.graph.get_state.return_value.values = final_state
+        mock_graph.propagator.create_initial_state.return_value = {
+            "messages": [],
+            "company_of_interest": "NVDA",
+            "trade_date": "2026-01-10",
+        }
+        mock_graph.propagator.get_graph_args.return_value = graph_args
+        mock_graph.process_signal.return_value = "Hold"
+
+        state, decision = TradingAgentsGraph._run_graph(mock_graph, "NVDA", "2026-01-10")
+
+        assert state == final_state
+        assert decision == "Hold"
+        mock_graph.graph.get_state.assert_called_once_with(graph_args["config"])
 
     def test_log_state_preserves_new_serializable_fields_and_excludes_messages(self, tmp_path):
         """_log_state should copy AgentState fields instead of manually whitelisting old keys."""
