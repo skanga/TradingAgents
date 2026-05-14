@@ -68,7 +68,7 @@ Our framework decomposes complex trading tasks into specialized roles. This ensu
   <img src="assets/risk.png" width="70%" style="display: inline-block; margin: 0 2%;">
 </p>
 
-## Installation and CLI
+## Installation and Run
 
 ### Installation
 
@@ -87,17 +87,62 @@ python -m venv .venv
 ./.venv/Scripts/activate
 ```
 
-Install the package and its dependencies:
+Install the package and its CLI/development dependencies:
 
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
-Run it interactively (you will be prompted for everything)
+Run the CLI interactively (you will be prompted for everything):
 
 ```bash
 python -m cli.main
 ```
+
+### Run Modes
+
+TradingAgents currently has three local user interfaces:
+
+| Interface | Purpose | Command |
+|---|---|---|
+| CLI | Terminal workflow | `python -m cli.main` or `tradingagents` |
+| Streamlit GUI | Legacy browser GUI | `python -m streamlit run gui/app.py` or `tradingagents-gui` |
+| Next.js web app | Primary web UI | FastAPI backend on port 8000 plus Next.js frontend on port 3000 |
+
+For the legacy Streamlit GUI, install the GUI extra first:
+
+```powershell
+python -m pip install -e ".[gui]"
+python -m streamlit run gui/app.py
+```
+
+On Windows, `run.bat` launches the Streamlit GUI using the first matching
+virtual environment it finds:
+
+```powershell
+.\run.bat
+```
+
+For the Next.js web app, run the FastAPI backend and the frontend in separate
+terminals. The backend currently reuses some modules under `gui/`, so install
+both `service` and `gui` extras; otherwise `uvicorn service.app:app` can fail
+with `ModuleNotFoundError: No module named 'streamlit'`.
+
+```powershell
+python -m pip install -e ".[service,gui]"
+python -m uvicorn service.app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Then start the web app:
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`. The Next.js app proxies `/api/*` to the backend
+through `API_URL`, which defaults to `http://localhost:8000`.
 
 Common development checks:
 
@@ -117,12 +162,32 @@ mypy .
 
 ### Docker
 
-Alternatively, run with Docker:
+Alternatively, run the CLI with Docker:
 
 ```bash
 cp .env.example .env  # add your API keys
 docker compose run --rm tradingagents
 ```
+
+Run the Next.js web UI and FastAPI backend with Docker:
+
+```bash
+cp .env.example .env  # add your API keys
+docker compose up api web
+```
+
+Then open `http://localhost:3000`. Docker installs the needed backend
+dependencies inside the API image, including the GUI modules reused by the
+service.
+
+Run the legacy Streamlit GUI with Docker:
+
+```bash
+cp .env.example .env  # add your API keys
+docker compose --profile legacy up gui
+```
+
+Then open `http://localhost:8501`.
 
 For local models with Ollama:
 
