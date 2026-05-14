@@ -906,19 +906,22 @@ class TestDeferredReflection:
         assert "+5.0%" in entries[0]["raw"]
         assert "+2.0%" in entries[0]["alpha"]
 
-    def test_resolve_leaves_premature_entry_pending(self, tmp_path):
-        """#1169: when the outcome can't be settled yet (_fetch_returns None),
-        the entry stays pending and the reflector is never called."""
+    def test_resolve_reflection_failure_is_non_fatal(self, tmp_path, caplog):
+        """A transient reflection LLM failure does not abort the next run."""
         log = make_log(tmp_path)
         log.store_decision("NVDA", "2026-01-05", DECISION_BUY)
         mock_reflector = MagicMock()
+        mock_reflector.reflect_on_final_decision.side_effect = RuntimeError("llm timeout")
         mock_graph = MagicMock(spec=TradingAgentsGraph)
         mock_graph.memory_log = log
         mock_graph.reflector = mock_reflector
-        mock_graph._fetch_returns = MagicMock(return_value=(None, None, None, None))
-        TradingAgentsGraph._resolve_pending_entries(mock_graph, "NVDA")
-        assert len(log.get_pending_entries()) == 1  # still pending
-        mock_reflector.reflect_on_final_decision.assert_not_called()
+        mock_graph._fetch_returns = MagicMock(return_value=(0.05, 0.02, 5))
+
+        with caplog.at_level("WARNING", logger="tradingagents.graph.trading_graph"):
+            TradingAgentsGraph._resolve_pending_entries(mock_graph, "NVDA")
+
+        assert len(log.get_pending_entries()) == 1
+        assert "Could not generate reflection for NVDA on 2026-01-05" in caplog.text
 
 
 # ---------------------------------------------------------------------------
