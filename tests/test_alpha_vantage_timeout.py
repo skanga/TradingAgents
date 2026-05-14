@@ -30,6 +30,55 @@ def test_alpha_vantage_request_uses_timeout(monkeypatch):
     assert captured["timeout"] == DEFAULT_ALPHA_VANTAGE_TIMEOUT
 
 
+def test_alpha_vantage_request_ignores_dead_global_entitlement(monkeypatch):
+    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "key")
+    captured = {}
+
+    class Response:
+        text = "timestamp,open\n2026-01-01,1\n"
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(url, params, timeout):
+        captured["params"] = params
+        return Response()
+
+    monkeypatch.setitem(
+        __import__("tradingagents.dataflows.alpha_vantage_common", fromlist=[""]).__dict__,
+        "_current_entitlement",
+        "premium",
+    )
+
+    with patch("tradingagents.dataflows.alpha_vantage_common.requests.get", side_effect=fake_get):
+        _make_api_request("TIME_SERIES_DAILY_ADJUSTED", {"symbol": "AAPL"})
+
+    assert "entitlement" not in captured["params"]
+
+
+def test_alpha_vantage_request_keeps_explicit_entitlement(monkeypatch):
+    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "key")
+    captured = {}
+
+    class Response:
+        text = "timestamp,open\n2026-01-01,1\n"
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(url, params, timeout):
+        captured["params"] = params
+        return Response()
+
+    with patch("tradingagents.dataflows.alpha_vantage_common.requests.get", side_effect=fake_get):
+        _make_api_request(
+            "TIME_SERIES_DAILY_ADJUSTED",
+            {"symbol": "AAPL", "entitlement": "realtime"},
+        )
+
+    assert captured["params"]["entitlement"] == "realtime"
+
+
 def test_alpha_vantage_timeout_raises_temporary_error(monkeypatch):
     monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "key")
     with patch(
