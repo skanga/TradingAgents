@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import datetime
 import json
+import logging
 import re
 import time
 from dataclasses import asdict, dataclass
@@ -19,6 +20,13 @@ from markdown_it import MarkdownIt
 
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.agents.utils.rating import parse_rating
+from tradingagents.formatting import (
+    format_number as _format_number,
+    format_percent as _format_percent,
+    format_quantity as _format_quantity,
+)
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from tradingagents.allocation import AllocationPlan, AllocationPolicy
@@ -531,6 +539,7 @@ def build_llm_narrative(
         response = llm.invoke(prompt)
         return str(getattr(response, "content", response)).strip() or None
     except Exception:
+        logger.warning("LLM narrative generation failed", exc_info=True)
         return None
 
 
@@ -591,22 +600,6 @@ def _current_weight(
     if total <= 0:
         return None
     return result.holding.market_value / total
-
-
-def _format_number(value: float | None) -> str:
-    return "" if value is None else f"{value:.2f}"
-
-
-def _format_percent(value: float | None) -> str:
-    return "" if value is None else f"{value * 100:.2f}%"
-
-
-def _format_quantity(value: float | None) -> str:
-    if value is None:
-        return ""
-    if float(value).is_integer():
-        return str(int(value))
-    return f"{value:.4f}"
 
 
 def _relative_report_link(path: Path | None, base_path: Path | None = None) -> str:

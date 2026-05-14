@@ -6,6 +6,11 @@ from dataclasses import asdict, dataclass, replace
 from typing import Literal, Sequence
 
 from tradingagents.batch import BatchTickerResult
+from tradingagents.formatting import (
+    format_number as _format_number,
+    format_percent as _format_percent,
+    format_quantity as _format_quantity,
+)
 
 
 RecommendedAction = Literal["buy", "sell", "hold"]
@@ -367,17 +372,3 @@ def _recommended_action(delta_value: float, total_value: float) -> RecommendedAc
     return "hold"
 
 
-def _format_number(value: float | None) -> str:
-    return "" if value is None else f"{value:.2f}"
-
-
-def _format_percent(value: float | None) -> str:
-    return "" if value is None else f"{value * 100:.2f}%"
-
-
-def _format_quantity(value: float | None) -> str:
-    if value is None:
-        return ""
-    if float(value).is_integer():
-        return str(int(value))
-    return f"{value:.4f}"

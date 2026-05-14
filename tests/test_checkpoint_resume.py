@@ -16,10 +16,6 @@ from tradingagents.graph.checkpointer import (
     thread_id,
 )
 
-# Mutable flag to simulate crash on first run
-_should_crash = False
-
-
 class _SimpleState(TypedDict):
     count: int
 
@@ -28,16 +24,15 @@ def _node_a(state: _SimpleState) -> dict:
     return {"count": state["count"] + 1}
 
 
-def _node_b(state: _SimpleState) -> dict:
-    if _should_crash:
-        raise RuntimeError("simulated mid-analysis crash")
-    return {"count": state["count"] + 10}
+def _build_graph(crash_state: dict[str, bool]) -> StateGraph:
+    def node_b(state: _SimpleState) -> dict:
+        if crash_state["should_crash"]:
+            raise RuntimeError("simulated mid-analysis crash")
+        return {"count": state["count"] + 10}
 
-
-def _build_graph() -> StateGraph:
     builder = StateGraph(_SimpleState)
     builder.add_node("analyst", _node_a)
-    builder.add_node("trader", _node_b)
+    builder.add_node("trader", node_b)
     builder.set_entry_point("analyst")
     builder.add_edge("analyst", "trader")
     builder.add_edge("trader", END)
@@ -60,13 +55,13 @@ class TestCheckpointResume(unittest.TestCase):
 
     def test_crash_and_resume(self):
         """Crash at 'trader' node, then resume from checkpoint."""
-        global _should_crash
-        builder = _build_graph()
+        crash_state = {"should_crash": False}
+        builder = _build_graph(crash_state)
         tid = thread_id(self.ticker, self.date)
         cfg = {"configurable": {"thread_id": tid}}
 
         # Run 1: crash at trader node
-        _should_crash = True
+        crash_state["should_crash"] = True
         with get_checkpointer(self.tmpdir, self.ticker) as saver:
             graph = builder.compile(checkpointer=saver)
             with self.assertRaises(RuntimeError):
@@ -78,7 +73,7 @@ class TestCheckpointResume(unittest.TestCase):
         self.assertEqual(step, 1)
 
         # Run 2: resume — trader succeeds this time
-        _should_crash = False
+        crash_state["should_crash"] = False
         with get_checkpointer(self.tmpdir, self.ticker) as saver:
             graph = builder.compile(checkpointer=saver)
             result = graph.invoke(None, config=cfg)
@@ -88,13 +83,13 @@ class TestCheckpointResume(unittest.TestCase):
 
     def test_clear_checkpoint_allows_fresh_start(self):
         """After clearing, the graph starts from scratch."""
-        global _should_crash
-        builder = _build_graph()
+        crash_state = {"should_crash": False}
+        builder = _build_graph(crash_state)
         tid = thread_id(self.ticker, self.date)
         cfg = {"configurable": {"thread_id": tid}}
 
         # Create a checkpoint by crashing
-        _should_crash = True
+        crash_state["should_crash"] = True
         with get_checkpointer(self.tmpdir, self.ticker) as saver:
             graph = builder.compile(checkpointer=saver)
             with self.assertRaises(RuntimeError):
@@ -107,7 +102,7 @@ class TestCheckpointResume(unittest.TestCase):
         self.assertFalse(has_checkpoint(self.tmpdir, self.ticker, self.date))
 
         # Fresh run succeeds from scratch
-        _should_crash = False
+        crash_state["should_crash"] = False
         with get_checkpointer(self.tmpdir, self.ticker) as saver:
             graph = builder.compile(checkpointer=saver)
             result = graph.invoke({"count": 0}, config=cfg)
@@ -117,12 +112,12 @@ class TestCheckpointResume(unittest.TestCase):
 
     def test_different_date_starts_fresh(self):
         """A different date must NOT resume from an existing checkpoint."""
-        global _should_crash
-        builder = _build_graph()
+        crash_state = {"should_crash": False}
+        builder = _build_graph(crash_state)
         date2 = "2026-04-21"
 
         # Run with date1 — crash to leave a checkpoint
-        _should_crash = True
+        crash_state["should_crash"] = True
         tid1 = thread_id(self.ticker, self.date)
         with get_checkpointer(self.tmpdir, self.ticker) as saver:
             graph = builder.compile(checkpointer=saver)
@@ -135,7 +130,7 @@ class TestCheckpointResume(unittest.TestCase):
         self.assertFalse(has_checkpoint(self.tmpdir, self.ticker, date2))
 
         # Run with date2 — should start fresh and succeed
-        _should_crash = False
+        crash_state["should_crash"] = False
         tid2 = thread_id(self.ticker, date2)
         self.assertNotEqual(tid1, tid2)
 

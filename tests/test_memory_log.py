@@ -229,6 +229,35 @@ class TestTradingMemoryLogCore:
         assert entries[0]["reflection"] == "First correct."
         assert entries[1]["reflection"] == "Second correct."
 
+    def test_batch_update_holds_path_lock_during_read_modify_write(self, tmp_path, monkeypatch):
+        """Outcome updates must hold the per-path lock for the full read/write cycle."""
+        log = make_log(tmp_path)
+        log.store_decision("NVDA", "2026-01-05", DECISION_BUY)
+        original_read = log._read_entries_uncached
+
+        def assert_lock_held():
+            lock = log._path_lock()
+            acquired = lock.acquire(blocking=False)
+            if acquired:
+                lock.release()
+                raise AssertionError("batch_update_with_outcomes read without path lock")
+            return original_read()
+
+        monkeypatch.setattr(log, "_read_entries_uncached", assert_lock_held)
+
+        log.batch_update_with_outcomes([
+            {
+                "ticker": "NVDA",
+                "trade_date": "2026-01-05",
+                "raw_return": 0.05,
+                "alpha_return": 0.02,
+                "holding_days": 5,
+                "reflection": "Resolved while locked.",
+            }
+        ])
+
+        assert make_log(tmp_path).load_entries()[0]["reflection"] == "Resolved while locked."
+
     def test_batch_update_matches_exact_parsed_tag_key(self, tmp_path):
         """Ticker/date lookup should match parsed tag fields, not string prefixes."""
         log = make_log(tmp_path)

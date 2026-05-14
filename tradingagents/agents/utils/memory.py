@@ -141,41 +141,42 @@ class TradingMemoryLog:
         if not self._log_path or not self._log_path.exists() or not updates:
             return
 
-        entries = self._read_entries_uncached()
+        with self._path_lock():
+            entries = self._read_entries_uncached()
 
-        update_map = {}
-        for update in updates:
-            key = (update["trade_date"], update["ticker"])
-            if key in update_map:
-                raise ValueError(
-                    f"duplicate outcome update for trade_date={key[0]!r}, ticker={key[1]!r}"
-                )
-            update_map[key] = update
+            update_map = {}
+            for update in updates:
+                key = (update["trade_date"], update["ticker"])
+                if key in update_map:
+                    raise ValueError(
+                        f"duplicate outcome update for trade_date={key[0]!r}, ticker={key[1]!r}"
+                    )
+                update_map[key] = update
 
-        updated_entries = []
-        for entry in entries:
-            if not entry.get("pending"):
+            updated_entries = []
+            for entry in entries:
+                if not entry.get("pending"):
+                    updated_entries.append(entry)
+                    continue
+
+                upd = update_map.get((entry["date"], entry["ticker"]))
+                if upd is None:
+                    updated_entries.append(entry)
+                    continue
+
+                entry = entry.copy()
+                entry.update({
+                    "pending": False,
+                    "raw": f"{upd['raw_return']:+.1%}",
+                    "alpha": f"{upd['alpha_return']:+.1%}",
+                    "holding": f"{upd['holding_days']}d",
+                    "reflection": upd["reflection"],
+                })
                 updated_entries.append(entry)
-                continue
+                del update_map[(entry["date"], entry["ticker"])]
 
-            upd = update_map.get((entry["date"], entry["ticker"]))
-            if upd is None:
-                updated_entries.append(entry)
-                continue
-
-            entry = entry.copy()
-            entry.update({
-                "pending": False,
-                "raw": f"{upd['raw_return']:+.1%}",
-                "alpha": f"{upd['alpha_return']:+.1%}",
-                "holding": f"{upd['holding_days']}d",
-                "reflection": upd["reflection"],
-            })
-            updated_entries.append(entry)
-            del update_map[(entry["date"], entry["ticker"])]
-
-        updated_entries = self._apply_rotation_entries(updated_entries)
-        self._atomic_write_text(self._serialize_jsonl(updated_entries))
+            updated_entries = self._apply_rotation_entries(updated_entries)
+            self._atomic_write_text(self._serialize_jsonl(updated_entries))
 
     # --- Helpers ---
 
@@ -280,6 +281,8 @@ class TradingMemoryLog:
             tmp_path.replace(self._log_path)
         finally:
             self._invalidate_entries_cache()
+            # On successful replace() the temp path has been atomically renamed.
+            # If replace() fails before the rename, remove the leftover temp file.
             if tmp_path.exists():
                 tmp_path.unlink()
 
