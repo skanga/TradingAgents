@@ -11,8 +11,8 @@ The three formats serve different jobs:
   with tabs in vanilla JS — emailable, viewable offline, no server
   needed.
 
-Standalone HTML / markdown render prettier markdown when ``markdown`` is
-installed but degrade gracefully to plain text if not.
+Standalone HTML / markdown render markdown with raw HTML disabled so reports
+can be served as HTML without executing prompt-injected markup.
 """
 
 from __future__ import annotations
@@ -24,14 +24,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from markdown_it import MarkdownIt
+
 from tradingagents.default_config import DEFAULT_CONFIG
 
-try:
-    import markdown as _md
-    _HAS_MARKDOWN = True
-except Exception:  # pragma: no cover
-    _md = None
-    _HAS_MARKDOWN = False
+_MD_RENDERER = MarkdownIt("commonmark", {"html": False}).enable("table")
 
 EXPORTS_DIR = Path(str(DEFAULT_CONFIG.get("results_dir", Path.home() / ".tradingagents" / "logs"))).parent / "exports"
 
@@ -198,13 +195,10 @@ _HTML_TEMPLATE = """<!doctype html>
 
 
 def _md_to_html(text: str) -> str:
-    """Render markdown text → HTML, falling back to a <pre> block if the
-    ``markdown`` library isn't installed."""
+    """Render markdown text to HTML without allowing raw HTML passthrough."""
     if not text:
         return "<p><em>(no content)</em></p>"
-    if _HAS_MARKDOWN:
-        return _md.markdown(text, extensions=["extra", "sane_lists"])
-    return f"<pre>{html.escape(text)}</pre>"
+    return _MD_RENDERER.render(text)
 
 
 def render_html(state: Dict[str, Any], meta: Dict[str, Any]) -> str:
