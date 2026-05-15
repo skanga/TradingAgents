@@ -7,7 +7,7 @@ local ``positions`` table.
 Configuration via env vars (read each call so a Settings page can update
 them at runtime without a restart):
 
-    PLANNER_API_URL    e.g. http://192.168.2.34:8765
+    PLANNER_API_URL    e.g. http://<planner-host>:8765
     PLANNER_API_KEY    same value as INTEGRATION_API_KEY in the planner
 
 When either is unset, ``is_configured()`` returns False and the API

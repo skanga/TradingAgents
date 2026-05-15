@@ -21,7 +21,7 @@ services:
     env_file:
       - .env
     environment:
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://192.168.2.34:3000,http://192.168.2.34}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     ports:
       - "${TRADINGAGENTS_API_PORT:-8000}:8000"
     volumes:
@@ -55,7 +55,7 @@ services:
     container_name: tradingagents-web
     environment:
       - API_URL=http://api:8000
-      - NEXT_PUBLIC_WS_BASE=${NEXT_PUBLIC_WS_BASE:-ws://192.168.2.34:8000}
+      - NEXT_PUBLIC_WS_BASE=${NEXT_PUBLIC_WS_BASE:-ws://localhost:8000}
     ports:
       - "${TRADINGAGENTS_WEB_PORT:-3000}:3000"
     depends_on:

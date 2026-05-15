@@ -5,7 +5,8 @@ to deploy, upgrade, or troubleshoot the NAS deployment.
 
 **Repo:** https://github.com/mrh335/TradingAgents
 **Upstream:** https://github.com/TauricResearch/TradingAgents
-**NAS deployment target:** `/volume1/docker/tradingagents/` on `192.168.2.34`
+**NAS deployment target:** configured in `scripts/nas/credentials.local`
+and defaults to `/volume1/docker/tradingagents/` for the remote path.
 
 ## Architecture (current)
 
@@ -17,7 +18,7 @@ Three services in one Docker compose stack:
 | `api` | 8000 | **FastAPI backend** — REST + WebSockets; powers the web UI |
 | `gui` | 8501 | **Streamlit (legacy)** — gated behind the `legacy` compose profile, only run when wanted as a fallback |
 
-Browser → `http://192.168.2.34:3000/` (web) → talks to `api:8000` over the Docker bridge network. Persistent data (SQLite, archives, exports, memory log) bind-mounted from `/volume1/docker/tradingagents/data/` into all three. CLI runs from the `tradingagents` service still work and share the same data dir.
+Browser → `http://<NAS_HOST>:3000/` (web) → talks to `api:8000` over the Docker bridge network. Persistent data (SQLite, archives, exports, memory log) bind-mounted from `/volume1/docker/tradingagents/data/` into all three. CLI runs from the `tradingagents` service still work and share the same data dir.
 
 ---
 
@@ -129,7 +130,7 @@ If you need something the scripts don't cover:
    then fill in API keys via `nano /volume1/docker/tradingagents/.env`
    and rerun `deploy.sh`).
 3. Tell Claude: *"Deploy to the NAS."*
-4. When deploy.sh finishes, open `http://192.168.2.34:8501/` in a
+4. When deploy.sh finishes, open `http://<NAS_HOST>:8501/` in a
    browser. Confirm:
    - Home page loads
    - Settings page shows API keys (env-set ones marked "env")
@@ -232,7 +233,7 @@ Keys" doesn't exist on DSM 7.2+. Add SSH keys via SSH instead:
 
 ```bash
 # from the local machine, with password auth still enabled:
-ssh <USER>@192.168.2.34
+ssh <USER>@<NAS_HOST>
 # on the NAS:
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
@@ -281,7 +282,7 @@ which coexists with the persistent `data/` subdir without overwriting it.
 - **2026-05-04** — Initial Docker deployment to Synology
   (`Dockerfile` with `[gui]` extras, `gui` compose service, deploy
   scripts, `OPERATIONS.md`).
-- **2026-05-05** — First successful deploy to `192.168.2.34`. Hit and
+- **2026-05-05** — First successful deploy to the configured NAS host. Hit and
   resolved: DSM 7 missing Authorized-Keys UI, non-interactive SSH PATH,
   Docker socket group ownership,
   `git clone` into non-empty directory.

@@ -45,8 +45,8 @@ logger = logging.getLogger(__name__)
 def _allowed_origins() -> list[str]:
     """Origins allowed for CORS.
 
-    Defaults to common LAN dev origins. Override with CORS_ORIGINS env var
-    (comma-separated), e.g. for the deployed Next.js host.
+    Defaults to local development origins. Override with CORS_ORIGINS env var
+    (comma-separated), e.g. for a LAN/NAS-deployed Next.js host.
     """
     raw = os.environ.get("CORS_ORIGINS")
     if raw:
@@ -54,9 +54,6 @@ def _allowed_origins() -> list[str]:
     return [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        # NAS LAN — adjust via CORS_ORIGINS env var if your NAS IP differs.
-        "http://192.168.2.34:3000",
-        "http://192.168.2.34",
     ]
 
 
