@@ -28,3 +28,21 @@ def test_ollama_compose_profile_uses_tradingagents_env_and_service_url():
     assert "- TRADINGAGENTS_LLM_PROVIDER=ollama" in lines
     assert "- TRADINGAGENTS_BACKEND_URL=http://ollama:11434/v1" in lines
     assert "- LLM_PROVIDER=ollama" not in lines
+
+
+def test_compose_runtime_defaults_are_localhost_not_site_specific_nas():
+    compose = (PROJECT_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "192.168.2.34" not in compose
+    assert "- CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}" in compose
+    assert "- NEXT_PUBLIC_WS_BASE=${NEXT_PUBLIC_WS_BASE:-ws://localhost:8000}" in compose
+
+
+def test_api_cors_defaults_are_localhost_only(monkeypatch):
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+
+    from service.app import _allowed_origins
+
+    origins = _allowed_origins()
+
+    assert origins == ["http://localhost:3000", "http://127.0.0.1:3000"]

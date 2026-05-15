@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { SettingsApi } from "@/lib/api";
 
 const SUGGESTIONS = [
-  { label: "Same NAS host (Docker host gateway)", value: "http://host.docker.internal:11434/v1" },
+  { label: "Same Docker host gateway", value: "http://host.docker.internal:11434/v1" },
   { label: "Other server on LAN (replace IP)",     value: "http://192.168.2.X:11434/v1" },
 ];
 

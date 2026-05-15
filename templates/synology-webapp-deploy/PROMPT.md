@@ -8,7 +8,7 @@ on the first three lines before pasting.
 
 --- BEGIN PROMPT ---
 
-I want to deploy this project to my Synology NAS at `192.168.2.34`
+I want to deploy this project to my Synology NAS at `<NAS_HOST_OR_IP>`
 using the same script-driven pattern we built for TradingAgents.
 
 **Project specifics (please read these and ask me if any are unclear before changing files):**

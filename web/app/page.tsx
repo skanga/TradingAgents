@@ -118,7 +118,7 @@ export default function Home() {
             <div className="font-semibold text-fg mb-1">Where data lives</div>
             <pre className="text-[11px] overflow-x-auto">
 {`Container path:    /home/appuser/.tradingagents/
-Synology bind:     /volume1/docker/tradingagents/data/
+Docker bind:       ./data/
    gui_config.json   API keys + GUI defaults
    gui.db            SQLite (runs, notes, chats, briefs)
    logs/             Per-run JSON archives
