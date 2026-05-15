@@ -4,7 +4,8 @@ How it works:
 
 - A single ``Broadcaster`` instance (module-level) keeps:
     - one ``asyncio.Queue`` per (channel, ticker) subscription
-    - a set of "active tickers" derived from current subscriptions
+    - a set of "active tickers" derived from current subscriptions and
+      explicit warm registrations
 
 - A background task wakes up every N seconds, pulls fresh data from
   yfinance for every active ticker, diffs against the last snapshot,
@@ -65,6 +66,10 @@ class Broadcaster:
         self._subs: Dict[str, Dict[str, List["asyncio.Queue[Dict[str, Any]]"]]] = {
             "price": {}, "news": {},
         }
+        # Price tickers to poll even before a browser opens a WebSocket.
+        # Values are source tokens, so independent features can warm and
+        # unwarm the same ticker without stepping on each other.
+        self._warm_price_tickers: Dict[str, Set[str]] = {}
         self._state: Dict[str, TickerState] = {}
         self._task: Optional[asyncio.Task] = None
         self._stop = False
@@ -115,6 +120,23 @@ class Broadcaster:
                 if not queues:
                     del self._subs[channel][ticker]
 
+    async def warm_ticker(self, ticker: str, *, source: str = "manual") -> None:
+        """Poll a price ticker without allocating a subscriber queue."""
+        ticker = ticker.upper()
+        async with self._lock:
+            self._warm_price_tickers.setdefault(ticker, set()).add(source)
+            self._state.setdefault(ticker, TickerState(ticker=ticker))
+
+    async def unwarm_ticker(self, ticker: str, *, source: str = "manual") -> None:
+        ticker = ticker.upper()
+        async with self._lock:
+            sources = self._warm_price_tickers.get(ticker)
+            if not sources:
+                return
+            sources.discard(source)
+            if not sources:
+                del self._warm_price_tickers[ticker]
+
     async def _send_initial_snapshot(self, channel: str, ticker: str,
                                      q: "asyncio.Queue[Dict[str, Any]]") -> None:
         st = self._state.get(ticker)
@@ -139,7 +161,10 @@ class Broadcaster:
     # ---- Polling loop ---------------------------------------------
 
     def _active_tickers(self, channel: str) -> Set[str]:
-        return set(self._subs.get(channel, {}).keys())
+        tickers = set(self._subs.get(channel, {}).keys())
+        if channel == "price":
+            tickers.update(self._warm_price_tickers.keys())
+        return tickers
 
     async def _poll_forever(self) -> None:
         last_news_run = 0.0

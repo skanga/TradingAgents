@@ -86,7 +86,7 @@ async def _startup() -> None:
     # without a manual subscribe.
     for entry in storage.list_watchlist():
         try:
-            await broadcaster.subscribe("price", entry["ticker"])
+            await broadcaster.warm_ticker(entry["ticker"], source="watchlist")
         except Exception:
             pass
     logger.info("TradingAgents API ready. CORS origins: %s", _allowed_origins())

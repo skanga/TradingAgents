@@ -63,7 +63,7 @@ async def create_position(req: PositionCreateRequest) -> Position:
     )
     # Warm the price stream so summary shows live value immediately.
     try:
-        await broadcaster.subscribe("price", req.ticker)
+        await broadcaster.warm_ticker(req.ticker, source=f"position:{pid}")
     except Exception:
         pass
     row = storage.get_position(pid)
@@ -90,10 +90,12 @@ def update_position(pid: int, req: PositionUpdateRequest) -> Position:
 
 
 @router.post("/positions/{pid}/close", response_model=Position)
-def close_position(pid: int, req: PositionCloseRequest) -> Position:
-    if not storage.get_position(pid):
+async def close_position(pid: int, req: PositionCloseRequest) -> Position:
+    existing = storage.get_position(pid)
+    if not existing:
         raise HTTPException(status_code=404, detail="position not found")
     storage.close_position(pid, closing_price=req.closing_price, closed_at=req.closed_at)
+    await broadcaster.unwarm_ticker(existing["ticker"], source=f"position:{pid}")
     row = storage.get_position(pid)
     if row is None:
         raise HTTPException(status_code=500, detail="position not retrievable")
@@ -101,8 +103,11 @@ def close_position(pid: int, req: PositionCloseRequest) -> Position:
 
 
 @router.delete("/positions/{pid}")
-def delete_position(pid: int) -> dict:
+async def delete_position(pid: int) -> dict:
+    existing = storage.get_position(pid)
     storage.delete_position(pid)
+    if existing:
+        await broadcaster.unwarm_ticker(existing["ticker"], source=f"position:{pid}")
     return {"deleted": pid}
 
 

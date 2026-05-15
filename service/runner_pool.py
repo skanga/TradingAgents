@@ -34,6 +34,7 @@ class ManagedRun:
     archive_path: Optional[str] = None
     error: Optional[str] = None
     warning: Optional[str] = None
+    terminal_event_seen: bool = False
     stats: Dict[str, int] = field(default_factory=lambda: {
         "llm_calls": 0, "tool_calls": 0, "tokens_in": 0, "tokens_out": 0,
     })
@@ -139,6 +140,7 @@ class RunnerPool:
         # Final drain
         for ev in managed.handle.poll_events():
             self._ingest(managed, ev)
+        self._finalize_eventless_exit(managed)
         self._mark_finished(managed)
 
     def _ingest(self, managed: ManagedRun, raw: Dict[str, Any]) -> None:
@@ -156,6 +158,7 @@ class RunnerPool:
             elif kind == "warning":
                 managed.warning = data.get("message")
             elif kind == "done":
+                managed.terminal_event_seen = True
                 managed.decision = data.get("decision")
                 managed.archive_path = data.get("archive_path") or data.get("report_path")
                 # Persist to DB.
@@ -175,6 +178,7 @@ class RunnerPool:
                 except Exception:
                     pass
             elif kind == "error":
+                managed.terminal_event_seen = True
                 managed.error = data.get("message", "unknown error")
                 try:
                     storage.finalize_run(
@@ -189,6 +193,24 @@ class RunnerPool:
 
         for q in subs:
             self._loop_call(q.put_nowait, envelope)
+
+    def _finalize_eventless_exit(self, managed: ManagedRun) -> None:
+        with managed._lock:
+            if managed.terminal_event_seen:
+                return
+            return_code = getattr(managed.handle, "return_code", None)
+            stderr = list(getattr(managed.handle, "stderr_buf", []) or [])
+
+        if return_code not in (None, 0):
+            message = f"worker exited with code {return_code}"
+        else:
+            message = "worker exited without a terminal event"
+
+        stderr_text = "".join(stderr).strip()
+        if stderr_text:
+            message = f"{message}: {stderr_text[-2000:]}"
+
+        self._ingest(managed, {"type": "error", "message": message})
 
     def _mark_finished(self, managed: ManagedRun) -> None:
         with managed._lock:
