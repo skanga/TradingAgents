@@ -46,3 +46,12 @@ def test_api_cors_defaults_are_localhost_only(monkeypatch):
     origins = _allowed_origins()
 
     assert origins == ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+def test_web_dockerfile_uses_lockfile_and_npm_ci():
+    dockerfile = (PROJECT_ROOT / "Dockerfile.web").read_text(encoding="utf-8")
+
+    assert "COPY web/package.json web/package-lock.json ./" in dockerfile
+    assert "RUN npm ci --no-audit --no-fund --legacy-peer-deps" in dockerfile
+    assert "web/package-lock.json*" not in dockerfile
+    assert "RUN npm install" not in dockerfile
