@@ -1,4 +1,4 @@
-from tradingagents.dataflows.config import get_config, reset_config, use_config
+from tradingagents.dataflows.config import get_config, reset_config, set_config, use_config
 
 
 def test_config_context_isolation():
@@ -26,3 +26,20 @@ def test_nested_config_context_restores_outer():
         assert get_config()["output_language"] == "Spanish"
     finally:
         reset_config(outer)
+
+
+def test_use_config_merges_from_defaults_while_set_config_merges_current_context():
+    token = use_config({"output_language": "Spanish"})
+    try:
+        set_config({"llm_provider": "openai"})
+        assert get_config()["output_language"] == "Spanish"
+        assert get_config()["llm_provider"] == "openai"
+
+        inner = use_config({"llm_provider": "anthropic"})
+        try:
+            assert get_config()["llm_provider"] == "anthropic"
+            assert get_config()["output_language"] != "Spanish"
+        finally:
+            reset_config(inner)
+    finally:
+        reset_config(token)

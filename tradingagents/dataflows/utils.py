@@ -1,3 +1,4 @@
+import logging
 import re
 import pandas as pd
 from datetime import date, timedelta, datetime
@@ -6,6 +7,7 @@ from typing import Annotated
 import pandas as pd
 
 SavePathType = Annotated[str, "File path to save data. If None, data is not saved."]
+logger = logging.getLogger(__name__)
 
 # Tickers can contain letters, digits, dot, dash, underscore, caret
 # (index symbols like ^GSPC), equals (futures like GC=F), and plus
@@ -48,7 +50,7 @@ def save_output(
 ) -> None:
     if save_path:
         data.to_csv(save_path, encoding="utf-8")
-        print(f"{tag} saved to {save_path}")
+        logger.info("%s saved to %s", tag, save_path)
 
 
 def get_current_date():
