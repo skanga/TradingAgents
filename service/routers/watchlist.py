@@ -36,13 +36,14 @@ async def add_to_watchlist(req: WatchlistAddRequest) -> WatchlistEntry:
     # Pre-warm: register the ticker with the broadcaster so the next poll
     # picks it up. The first browser subscription would do this anyway,
     # but doing it now means a snapshot is ready by the time the UI loads.
-    await broadcaster.subscribe("price", entry["ticker"])
+    await broadcaster.warm_ticker(entry["ticker"], source="watchlist")
     return WatchlistEntry(**entry)
 
 
 @router.delete("/{ticker}")
-def remove_from_watchlist(ticker: str) -> dict:
+async def remove_from_watchlist(ticker: str) -> dict:
     storage.remove_from_watchlist(ticker)
+    await broadcaster.unwarm_ticker(ticker, source="watchlist")
     return {"removed": ticker.upper()}
 
 
