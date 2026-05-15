@@ -3,11 +3,10 @@
 
 FROM node:20-alpine AS deps
 WORKDIR /build
-COPY web/package.json web/package-lock.json* ./
-# Use --no-audit --no-fund to keep build noise down; --omit=dev is
-# applied via npm ci's behavior with NODE_ENV=production at run time
-# but here we want devDeps because next CLI lives in there.
-RUN npm install --no-audit --no-fund --legacy-peer-deps
+COPY web/package.json web/package-lock.json ./
+# Use the committed lockfile for reproducible installs. Keep devDeps here
+# because the builder stage needs the Next.js CLI and TypeScript toolchain.
+RUN npm ci --no-audit --no-fund --legacy-peer-deps
 
 FROM node:20-alpine AS builder
 WORKDIR /build
