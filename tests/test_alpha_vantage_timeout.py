@@ -6,6 +6,7 @@ import requests
 from tradingagents.dataflows.alpha_vantage_common import (
     DEFAULT_ALPHA_VANTAGE_TIMEOUT,
     AlphaVantageTemporaryError,
+    _filter_csv_by_date_range,
     _make_api_request,
 )
 
@@ -87,3 +88,12 @@ def test_alpha_vantage_timeout_raises_temporary_error(monkeypatch):
     ):
         with pytest.raises(AlphaVantageTemporaryError):
             _make_api_request("TIME_SERIES_DAILY_ADJUSTED", {"symbol": "AAPL"})
+
+
+def test_alpha_vantage_csv_filter_failure_logs_warning(caplog):
+    raw_csv = "timestamp,open\nnot-a-date,1\n"
+
+    result = _filter_csv_by_date_range(raw_csv, "2026-01-01", "2026-01-02")
+
+    assert result == raw_csv
+    assert "Failed to filter CSV data by date range" in caplog.text

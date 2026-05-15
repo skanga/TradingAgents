@@ -1,7 +1,10 @@
 from datetime import datetime
 import inspect
+import logging
 
-from tradingagents.dataflows.utils import get_next_weekday
+import pandas as pd
+
+from tradingagents.dataflows.utils import get_next_weekday, save_output
 
 
 def test_get_next_weekday_returns_datetime_for_string_weekday():
@@ -21,3 +24,13 @@ def test_get_next_weekday_contract_is_annotated_as_datetime_return():
     signature = inspect.signature(get_next_weekday)
 
     assert signature.return_annotation is datetime
+
+
+def test_save_output_logs_saved_path(tmp_path, caplog):
+    output_path = tmp_path / "out.csv"
+    caplog.set_level(logging.INFO)
+
+    save_output(pd.DataFrame({"a": [1]}), "sample", str(output_path))
+
+    assert output_path.exists()
+    assert "sample saved to" in caplog.text

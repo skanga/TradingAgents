@@ -1,4 +1,5 @@
 import os
+import logging
 import requests
 import pandas as pd
 import json
@@ -7,6 +8,7 @@ from io import StringIO
 
 API_BASE_URL = "https://www.alphavantage.co/query"
 DEFAULT_ALPHA_VANTAGE_TIMEOUT = 15
+logger = logging.getLogger(__name__)
 
 def get_api_key() -> str:
     """Retrieve the API key for Alpha Vantage from environment variables."""
@@ -133,5 +135,5 @@ def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> 
 
     except Exception as e:
         # If filtering fails, return original data with a warning
-        print(f"Warning: Failed to filter CSV data by date range: {e}")
+        logger.warning("Failed to filter CSV data by date range: %s", e)
         return csv_data
