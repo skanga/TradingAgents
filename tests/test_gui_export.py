@@ -31,3 +31,34 @@ def test_gui_pdf_export_does_not_depend_on_xhtml2pdf():
 
     assert "xhtml2pdf>=0.2.13" not in optional_dependencies["gui"]
     assert "xhtml2pdf>=0.2.13" not in optional_dependencies["service"]
+
+
+def test_html_export_escapes_raw_script_tags():
+    html = export.render_html(
+        {"market_report": "<script>alert(1)</script>"},
+        {"ticker": "SPY", "trade_date": "2026-05-07"},
+    )
+
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+
+def test_html_export_escapes_raw_html_event_handlers():
+    html = export.render_html(
+        {"market_report": '<img src=x onerror="alert(1)">'},
+        {"ticker": "SPY", "trade_date": "2026-05-07"},
+    )
+
+    assert "<img" not in html
+    assert '<img src=x onerror="alert(1)">' not in html
+    assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in html
+
+
+def test_html_export_still_renders_markdown_tables():
+    html = export.render_html(
+        {"market_report": "| Metric | Value |\n| --- | ---: |\n| Price | 100 |"},
+        {"ticker": "SPY", "trade_date": "2026-05-07"},
+    )
+
+    assert "<table>" in html
+    assert "<td style=\"text-align:right\">100</td>" in html
