@@ -35,8 +35,8 @@ class PositionCreateRequest(BaseModel):
 
 
 class PositionUpdateRequest(BaseModel):
-    shares: Optional[float] = None
-    cost_basis_per_share: Optional[float] = None
+    shares: Optional[float] = Field(default=None, gt=0)
+    cost_basis_per_share: Optional[float] = Field(default=None, gt=0)
     account: Optional[str] = None
     notes: Optional[str] = None
 
