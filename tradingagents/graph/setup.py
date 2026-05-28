@@ -22,7 +22,10 @@ from tradingagents.agents import (
 )
 from tradingagents.agents.utils.agent_states import AgentState
 
-from .analyst_execution import build_analyst_execution_plan
+from .analyst_execution import (
+    ANALYST_NODE_SPECS,
+    build_analyst_execution_plan,
+)
 from .conditional_logic import ConditionalLogic
 
 # Every target a shared conditional router can return. Each edge driven by the
@@ -60,8 +63,8 @@ ANALYST_SPECS: dict[str, AnalystSpec] = {
         continue_fn=lambda logic: logic.should_continue_market,
     ),
     "social": AnalystSpec(
-        node_name="Social Analyst",
-        clear_name="Msg Clear Social",
+        node_name=ANALYST_NODE_SPECS["social"].agent_node,
+        clear_name=ANALYST_NODE_SPECS["social"].clear_node,
         tool_name="tools_social",
         create_node=create_sentiment_analyst,
         continue_fn=lambda logic: logic.should_continue_social,
@@ -92,12 +95,14 @@ class GraphSetup:
         deep_thinking_llm: Any,
         tool_nodes: dict[str, ToolNode],
         conditional_logic: ConditionalLogic,
+        analyst_concurrency_limit: int = 1,
     ):
         """Initialize with required components."""
         self.quick_thinking_llm = quick_thinking_llm
         self.deep_thinking_llm = deep_thinking_llm
         self.tool_nodes = tool_nodes
         self.conditional_logic = conditional_logic
+        self.analyst_concurrency_limit = analyst_concurrency_limit
 
     def setup_graph(
         self, selected_analysts=None
@@ -133,12 +138,18 @@ class GraphSetup:
                 f"Allowed analyst keys: {allowed}"
             )
 
+        plan = build_analyst_execution_plan(
+            selected_analysts,
+            concurrency_limit=self.analyst_concurrency_limit,
+        )
+
         # Create analyst nodes
         analyst_nodes = {}
         delete_nodes = {}
         tool_nodes = {}
 
-        for analyst_type in selected_analysts:
+        for plan_spec in plan.specs:
+            analyst_type = plan_spec.key
             spec = ANALYST_SPECS[analyst_type]
             analyst_nodes[analyst_type] = spec.create_node(self.quick_thinking_llm)
             delete_nodes[analyst_type] = create_msg_delete()
@@ -178,11 +189,12 @@ class GraphSetup:
 
         # Define edges
         # Start with the first analyst
-        first_analyst = selected_analysts[0]
+        first_analyst = plan.specs[0].key
         workflow.add_edge(START, ANALYST_SPECS[first_analyst].node_name)
 
         # Connect analysts in sequence
-        for i, analyst_type in enumerate(selected_analysts):
+        for i, plan_spec in enumerate(plan.specs):
+            analyst_type = plan_spec.key
             spec = ANALYST_SPECS[analyst_type]
             current_analyst = spec.node_name
             current_tools = spec.tool_name
@@ -197,8 +209,8 @@ class GraphSetup:
             workflow.add_edge(current_tools, current_analyst)
 
             # Connect to next analyst or to Bull Researcher if this is the last analyst
-            if i < len(selected_analysts) - 1:
-                next_analyst = ANALYST_SPECS[selected_analysts[i + 1]].node_name
+            if i < len(plan.specs) - 1:
+                next_analyst = ANALYST_SPECS[plan.specs[i + 1].key].node_name
                 workflow.add_edge(current_clear, next_analyst)
             else:
                 workflow.add_edge(current_clear, "Bull Researcher")

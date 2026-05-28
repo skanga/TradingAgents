@@ -119,6 +119,7 @@ class TradingAgentsGraph:
             self.deep_thinking_llm,
             self.tool_nodes,
             self.conditional_logic,
+            analyst_concurrency_limit=self.config.get("analyst_concurrency_limit", 1),
         )
 
         self.propagator = Propagator(max_recur_limit=max_recur_limit)
@@ -373,58 +374,14 @@ class TradingAgentsGraph:
         if updates:
             self.memory_log.batch_update_with_outcomes(updates)
 
-    def resolve_instrument_context(self, ticker: str, asset_type: str = "stock") -> str:
-        """Resolve ticker identity once and return the full instrument context.
-
-        Deterministic yfinance lookup (cached, fail-open) injected into a
-        context string so every agent anchors to the real company instead of
-        hallucinating one from the price chart (#814). Both the propagate()
-        path and the CLI call this so the resolved identity reaches the whole
-        graph regardless of entry point.
-        """
-        identity = resolve_instrument_identity(ticker)
-        return build_instrument_context(ticker, asset_type, identity)
-
-    def _memory_as_of(self, trade_date) -> str | None:
-        """Point-in-time cutoff for past-context lessons (#1251).
-
-        A historical/backtest run (trade date before today) filters lessons to
-        those already resolved by the trade date. A current-date run returns
-        None, disabling the filter so live behavior and pre-migration entries
-        (which have no stored resolution date) are unaffected.
-        """
-        td = str(trade_date)
-        return td if td < datetime.now().strftime("%Y-%m-%d") else None
-
-    def _run_signature(self, asset_type: str) -> str:
-        """Graph-shape inputs that must invalidate a checkpoint if changed.
-
-        Keyed into the checkpoint thread ID so a resume under a different analyst
-        selection, debate/risk depth, or asset mode starts fresh instead of
-        silently continuing the previous graph (#1089).
-        """
-        return "|".join([
-            "analysts=" + ",".join(self.selected_analysts),
-            f"debate={self.config['max_debate_rounds']}",
-            f"risk={self.config['max_risk_discuss_rounds']}",
-            f"asset={asset_type}",
-        ])
-
     def propagate(self, company_name, trade_date, asset_type: str = "stock"):
         """Run the trading agents graph for a company on a specific date.
 
-        ``asset_type`` selects between the stock pipeline (default) and the
-        crypto pipeline (``"crypto"``) shipped in #567 — the CLI auto-detects
-        from the ticker; programmatic callers pass it explicitly. When
-        ``checkpoint_enabled`` is set in config, the graph is recompiled with
-        a per-ticker SqliteSaver so a crashed run can resume from the last
-        successful node on a subsequent invocation with the same ticker+date.
-
-        Returns ``(final_state, signal)`` where ``signal`` is one of the 5-tier
-        ratings (Buy / Overweight / Hold / Underweight / Sell) or ``"REVIEW"``
-        when the decision had no parseable rating (#1170); guard with
-        ``tradingagents.agents.utils.rating.is_review`` before mapping it to the
-        PortfolioRating enum.
+        ``asset_type`` selects between stock (default) and crypto prompt
+        context. When ``checkpoint_enabled`` is set in config, the graph is
+        recompiled with a per-ticker SqliteSaver so a crashed run can resume
+        from the last successful node on a subsequent invocation with the same
+        ticker+date.
         """
         safe_company_name = safe_ticker_component(company_name)
         safe_trade_date = TradingAgentsGraph._validate_trade_date(trade_date)
@@ -459,40 +416,24 @@ class TradingAgentsGraph:
                             safe_trade_date,
                         )
 
-                    return self._run_graph(safe_company_name, safe_trade_date)
+                    return self._run_graph(
+                        safe_company_name,
+                        safe_trade_date,
+                        asset_type=asset_type,
+                    )
 
-            return self._run_graph(safe_company_name, safe_trade_date)
+            return self._run_graph(
+                safe_company_name,
+                safe_trade_date,
+                asset_type=asset_type,
+            )
         finally:
             if self.config.get("checkpoint_enabled"):
                 self._checkpointer_ctx = None
                 self.graph = self.workflow.compile()
             reset_config(token)
 
-    def clear_checkpoint_on_success(self, company_name, trade_date, asset_type: str = "stock"):
-        """Drop a completed run's checkpoint so a later run starts fresh (#1249)."""
-        if self.config.get("checkpoint_enabled"):
-            clear_checkpoint(
-                self.config["data_cache_dir"], company_name, str(trade_date),
-                self._run_signature(asset_type),
-            )
-
-    def save_reports(self, final_state, ticker, save_path=None) -> Path:
-        """Write the markdown report tree for a completed run, like the CLI does.
-
-        Programmatic callers get the same on-disk reports the CLI produces. Pass
-        an explicit ``save_path`` or let it default under ``results_dir``.
-        """
-        if save_path is None:
-            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_path = (
-                Path(self.config["results_dir"])
-                / "reports"
-                / f"{safe_ticker_component(ticker)}_{stamp}"
-            )
-        return write_report_tree(final_state, ticker, save_path)
-
-    def _run_graph(self, company_name, trade_date, asset_type: str = "stock",
-                   checkpoint_thread_id: str | None = None):
+    def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
         """Execute the graph and write the resulting state to disk and memory log."""
         # Initialize state — inject memory log context for PM and the
         # deterministically resolved instrument identity for all agents. On a
@@ -507,7 +448,6 @@ class TradingAgentsGraph:
             trade_date,
             asset_type=asset_type,
             past_context=past_context,
-            instrument_context=instrument_context,
         )
         args = self.propagator.get_graph_args()
 

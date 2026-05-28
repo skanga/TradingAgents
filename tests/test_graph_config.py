@@ -95,7 +95,8 @@ def test_graph_setup_uses_explicit_analyst_specs():
         is ConditionalLogic.should_continue_market
     )
 
-    assert ANALYST_SPECS["social"].node_name == "Social Analyst"
+    assert ANALYST_SPECS["social"].node_name == "Sentiment Analyst"
+    assert ANALYST_SPECS["social"].clear_name == "Msg Clear Sentiment"
     assert (
         ANALYST_SPECS["social"].continue_fn(logic).__func__
         is ConditionalLogic.should_continue_social

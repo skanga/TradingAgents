@@ -30,6 +30,12 @@ class TestMinimaxReasoningSplit:
         payload = _client()._get_request_payload([HumanMessage(content="hi")])
         assert payload.get("reasoning_split") is True
 
+    def test_non_reasoning_minimax_model_does_not_set_reasoning_split(self):
+        payload = _client("MiniMax-Coding-Plan")._get_request_payload(
+            [HumanMessage(content="hi")]
+        )
+        assert "reasoning_split" not in payload
+
     def test_caller_supplied_reasoning_split_is_preserved(self):
         """If the user explicitly sets reasoning_split, don't override it
         (setdefault semantics — caller wins)."""

@@ -1,5 +1,6 @@
 import datetime
 from html import escape
+import inspect
 import time
 from collections import deque
 import questionary
@@ -36,6 +37,8 @@ from cli.utils import (
     ask_output_language,
     ask_qwen_region,
     confirm_ollama_endpoint,
+    detect_asset_type,
+    filter_analysts_for_asset_type,
     normalize_ticker_symbol,
     select_analysts,
     select_deep_thinking_agent,
@@ -53,6 +56,12 @@ from tradingagents.allocation import AllocationPolicy
 from tradingagents.charts import ChartArtifact, generate_report_charts
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution import DryRunExecutor, ExecutionAction, ExecutionOrder
+from tradingagents.graph.analyst_execution import (
+    AnalystWallTimeTracker,
+    build_analyst_execution_plan,
+    get_initial_analyst_node,
+    sync_analyst_tracker_from_chunk,
+)
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 
 # Search starts from the user's CWD so the installed `tradingagents`
@@ -625,9 +634,15 @@ def get_user_selections(
         assert output_language is not None
         assert selected_analysts is not None
         assert selected_research_depth is not None
+        asset_type = detect_asset_type(selected_ticker)
+        selected_analysts = filter_analysts_for_asset_type(
+            selected_analysts,
+            asset_type,
+        )
         return _build_user_selections(
             resolved_llm=resolved_llm,
             selected_ticker=selected_ticker,
+            asset_type=asset_type.value,
             analysis_date=analysis_date,
             output_language=output_language,
             selected_analysts=selected_analysts,
@@ -676,11 +691,13 @@ def get_user_selections(
         console.print(
             create_question_box(
                 "Step 1: Ticker Symbol",
-                "Enter the exact ticker symbol to analyze, including exchange suffix when needed (examples: SPY, CNC.TO, 7203.T, 0700.HK)",
+                "Enter the exact ticker symbol to analyze, including exchange suffix when needed (examples: SPY, CNC.TO, 7203.T, 0700.HK, BTC-USD)",
                 "SPY",
             )
         )
         selected_ticker = get_ticker()
+    asset_type = detect_asset_type(selected_ticker)
+    console.print(f"[green]Detected asset type:[/green] {asset_type.value}")
 
     if not analysis_date:
         # Step 2: Analysis date
@@ -711,10 +728,18 @@ def get_user_selections(
                 "Step 4: Analysts Team", "Select your LLM analyst agents for the analysis"
             )
         )
-        selected_analysts = select_analysts()
-        console.print(
-            f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
+        if len(inspect.signature(select_analysts).parameters) == 0:
+            selected_analysts = select_analysts()
+        else:
+            selected_analysts = select_analysts(asset_type)
+    else:
+        selected_analysts = filter_analysts_for_asset_type(
+            selected_analysts,
+            asset_type,
         )
+    console.print(
+        f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
+    )
 
     if selected_research_depth is None:
         # Step 5: Research depth
@@ -815,6 +840,7 @@ def get_user_selections(
             anthropic_effort=anthropic_effort,
         ),
         selected_ticker=selected_ticker,
+        asset_type=asset_type.value,
         analysis_date=analysis_date,
         output_language=output_language,
         selected_analysts=selected_analysts,
@@ -826,6 +852,7 @@ def _build_user_selections(
     *,
     resolved_llm: ResolvedLLMConfig,
     selected_ticker: str,
+    asset_type: str,
     analysis_date: str,
     output_language: str,
     selected_analysts: list[AnalystType],
@@ -833,7 +860,7 @@ def _build_user_selections(
 ) -> dict[str, Any]:
     return {
         "ticker": selected_ticker,
-        "asset_type": asset_type.value,
+        "asset_type": asset_type,
         "analysis_date": analysis_date,
         "analysts": selected_analysts,
         "research_depth": selected_research_depth,
@@ -1162,7 +1189,7 @@ def save_report_to_disk(
     if final_state.get("sentiment_report"):
         analysts_dir.mkdir(exist_ok=True)
         (analysts_dir / "sentiment.md").write_text(final_state["sentiment_report"], encoding="utf-8")
-        analyst_parts.append(("Social Analyst", final_state["sentiment_report"]))
+        analyst_parts.append(("Sentiment Analyst", final_state["sentiment_report"]))
     if final_state.get("news_report"):
         analysts_dir.mkdir(exist_ok=True)
         (analysts_dir / "news.md").write_text(final_state["news_report"], encoding="utf-8")
@@ -1533,6 +1560,7 @@ def run_analysis(
     llm_metadata = build_llm_report_metadata(selections)
     safe_ticker = normalize_ticker_symbol(selections["ticker"])
     selections["ticker"] = safe_ticker
+    selections.setdefault("asset_type", detect_asset_type(safe_ticker).value)
 
     # Create stats callback handler for tracking LLM/tool calls
     stats_handler = StatsCallbackHandler()
@@ -1540,7 +1568,10 @@ def run_analysis(
     # Normalize analyst selection to predefined order (selection is a 'set', order is fixed)
     selected_set = {analyst.value for analyst in selections["analysts"]}
     selected_analyst_keys = [a for a in ANALYST_ORDER if a in selected_set]
-    analyst_execution_plan = build_analyst_execution_plan(selected_analyst_keys)
+    analyst_execution_plan = build_analyst_execution_plan(
+        selected_analyst_keys,
+        concurrency_limit=config["analyst_concurrency_limit"],
+    )
     analyst_wall_time_tracker = AnalystWallTimeTracker(analyst_execution_plan)
 
     # Initialize the graph with callbacks bound to LLMs
@@ -1574,8 +1605,7 @@ def run_analysis(
 
         # Add initial messages
         message_buffer.add_message("System", f"Selected ticker: {selections['ticker']}")
-        if selections["asset_type"] != "stock":
-            message_buffer.add_message("System", f"Detected asset type: {selections['asset_type']}")
+        message_buffer.add_message("System", f"Detected asset type: {selections['asset_type']}")
         message_buffer.add_message(
             "System", f"Analysis date: {selections['analysis_date']}"
         )
@@ -1589,6 +1619,7 @@ def run_analysis(
         # Update agent status to in_progress for the first analyst
         first_analyst = get_initial_analyst_node(analyst_execution_plan)
         message_buffer.update_agent_status(first_analyst, "in_progress")
+        analyst_wall_time_tracker.mark_started(selected_analyst_keys[0])
         update_display(layout, message_buffer, stats_handler=stats_handler, start_time=start_time)
 
         # Create spinner text
@@ -1597,19 +1628,20 @@ def run_analysis(
         )
         update_display(layout, message_buffer, spinner_text, stats_handler=stats_handler, start_time=start_time)
 
-        # Initialize state and get graph args with callbacks.
-        # Resolve the instrument identity once here so all agents anchor to
-        # the real company (#814); the CLI builds state directly rather than
-        # going through propagate(), so this must happen on the CLI path too.
-        instrument_context = graph.resolve_instrument_context(
-            selections["ticker"], selections["asset_type"]
-        )
-        init_agent_state = graph.propagator.create_initial_state(
-            selections["ticker"],
-            selections["analysis_date"],
-            asset_type=selections["asset_type"],
-            instrument_context=instrument_context,
-        )
+        # Initialize state and get graph args with callbacks
+        create_initial_state = graph.propagator.create_initial_state
+        if "asset_type" in inspect.signature(create_initial_state).parameters:
+            init_agent_state = create_initial_state(
+                selections["ticker"],
+                selections["analysis_date"],
+                asset_type=selections["asset_type"],
+            )
+        else:
+            init_agent_state = create_initial_state(
+                selections["ticker"],
+                selections["analysis_date"],
+            )
+            init_agent_state["asset_type"] = selections["asset_type"]
         # Pass callbacks to graph config for tool execution tracking
         # (LLM tracking is handled separately via LLM constructor)
         args = graph.propagator.get_graph_args(callbacks=[stats_handler])
@@ -1649,7 +1681,11 @@ def run_analysis(
                                 message_buffer.add_tool_call(tool_call.name, tool_call.args)
 
             # Update analyst statuses based on report state (runs on every chunk)
-            update_analyst_statuses(message_buffer, chunk)
+            update_analyst_statuses(
+                message_buffer,
+                chunk,
+                wall_time_tracker=analyst_wall_time_tracker,
+            )
 
             # Research Team - Handle Investment Debate State
             if chunk.get("investment_debate_state"):

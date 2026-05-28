@@ -74,6 +74,14 @@ class TestMinimaxExactMatches:
     def test_m2_base_rejects_tool_choice(self):
         assert get_capabilities("MiniMax-M2").supports_tool_choice is False
 
+    def test_m2_reasoning_models_require_reasoning_split(self):
+        for model in ("MiniMax-M2.7", "MiniMax-M2.5-highspeed", "MiniMax-M2"):
+            assert get_capabilities(model).requires_reasoning_split is True
+
+    def test_non_reasoning_minimax_models_do_not_require_reasoning_split(self):
+        for model in ("minimax-text-01", "MiniMax-Coding-Plan", "abab6.5-chat"):
+            assert get_capabilities(model).requires_reasoning_split is False
+
 
 @pytest.mark.unit
 class TestDefault:

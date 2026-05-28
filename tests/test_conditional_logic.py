@@ -31,6 +31,12 @@ def test_market_conditional_clears_when_messages_empty():
     assert ConditionalLogic().should_continue_market(state) == "Msg Clear Market"
 
 
+def test_social_conditional_uses_sentiment_clear_node_label():
+    state = {"messages": [HumanMessage(content="Continue")]}
+
+    assert ConditionalLogic().should_continue_social(state) == "Msg Clear Sentiment"
+
+
 def test_debate_conditional_rejects_unexpected_current_response():
     state = {
         "investment_debate_state": {

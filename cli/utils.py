@@ -6,13 +6,13 @@ import questionary
 from dotenv import find_dotenv, set_key
 from rich.console import Console
 
-from cli.models import AnalystType
+from cli.models import AnalystType, AssetType
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.llm_clients.model_catalog import get_model_options
 
 console = Console()
 
-TICKER_INPUT_EXAMPLES = "SPY, 0700.HK, BTC-USD"
+TICKER_INPUT_EXAMPLES = "Examples: SPY, CNC.TO, 7203.T, 0700.HK, BTC-USD"
 
 ANALYST_ORDER = [
     ("Market Analyst", AnalystType.MARKET),
@@ -22,17 +22,6 @@ ANALYST_ORDER = [
 ]
 
 CRYPTO_SUFFIXES = ("-USD", "-USDT", "-USDC", "-BTC", "-ETH")
-
-
-def is_valid_ticker_input(value: str) -> bool:
-    """Whether a ticker entry is acceptable (charset + length).
-
-    Allows the characters Yahoo symbols use, including ``=`` for futures/forex
-    like ``GC=F`` and ``EURUSD=X`` (#980), and ``^`` for indices. Empty input is
-    allowed (it defaults to SPY downstream).
-    """
-    v = value.strip()
-    return not v or (all(ch.isalnum() or ch in "._-^=" for ch in v) and len(v) <= 32)
 
 
 def get_ticker() -> str:
@@ -74,6 +63,25 @@ def _validate_ticker_input(value: str) -> bool | str:
         return str(exc)
 
 
+def detect_asset_type(ticker: str) -> AssetType:
+    normalized_ticker = ticker.strip().upper()
+    if normalized_ticker.endswith(CRYPTO_SUFFIXES):
+        return AssetType.CRYPTO
+    return AssetType.STOCK
+
+
+def filter_analysts_for_asset_type(
+    analysts: List[AnalystType], asset_type: AssetType
+) -> List[AnalystType]:
+    if asset_type != AssetType.CRYPTO:
+        return analysts
+    return [
+        analyst
+        for analyst in analysts
+        if analyst != AnalystType.FUNDAMENTALS
+    ]
+
+
 def get_analysis_date() -> str:
     """Prompt the user to enter a date in YYYY-MM-DD format."""
     import re
@@ -107,7 +115,7 @@ def get_analysis_date() -> str:
     return date.strip()
 
 
-def select_analysts(asset_type: AssetType = AssetType.STOCK) -> list[AnalystType]:
+def select_analysts(asset_type: AssetType = AssetType.STOCK) -> List[AnalystType]:
     """Select analysts using an interactive checkbox."""
     available_analysts = filter_analysts_for_asset_type(
         [value for _, value in ANALYST_ORDER],

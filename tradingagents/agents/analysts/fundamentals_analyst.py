@@ -13,7 +13,10 @@ from tradingagents.agents.utils.prompts import load_prompt_template, render_prom
 def create_fundamentals_analyst(llm):
     def fundamentals_analyst_node(state):
         current_date = state["trade_date"]
-        instrument_context = get_instrument_context_from_state(state)
+        instrument_context = build_instrument_context(
+            state["company_of_interest"],
+            asset_type=state.get("asset_type", "stock"),
+        )
 
         tools = [
             get_fundamentals,

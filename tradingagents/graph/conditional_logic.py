@@ -24,7 +24,7 @@ class ConditionalLogic:
         return "Msg Clear Market"
 
     def should_continue_social(self, state: AgentState):
-        """Determine if social media analysis should continue."""
+        """Determine if sentiment analysis should continue."""
         if self._has_tool_calls(state):
             return "tools_social"
         return "Msg Clear Sentiment"

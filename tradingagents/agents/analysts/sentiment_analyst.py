@@ -62,7 +62,10 @@ def create_sentiment_analyst(llm):
         ticker = state["company_of_interest"]
         end_date = state["trade_date"]
         start_date = _seven_days_back(end_date)
-        instrument_context = get_instrument_context_from_state(state)
+        instrument_context = build_instrument_context(
+            ticker,
+            asset_type=state.get("asset_type", "stock"),
+        )
 
         # Pre-fetch all three sources. Each fetcher degrades gracefully and
         # returns a string (no exceptions surface from here), so the LLM
