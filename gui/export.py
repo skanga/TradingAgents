@@ -20,7 +20,7 @@ from __future__ import annotations
 import html
 import io
 import textwrap
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -31,6 +31,14 @@ from tradingagents.default_config import DEFAULT_CONFIG
 _MD_RENDERER = MarkdownIt("commonmark", {"html": False}).enable("table")
 
 EXPORTS_DIR = Path(str(DEFAULT_CONFIG.get("results_dir", Path.home() / ".tradingagents" / "logs"))).parent / "exports"
+
+
+def _utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _utc_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +233,7 @@ def render_html(state: Dict[str, Any], meta: Dict[str, Any]) -> str:
         started=html.escape(meta.get("started_at") or ""),
         completed=html.escape(meta.get("completed_at") or ""),
         run_id=html.escape(meta.get("run_id") or "—"),
-        exported_at=html.escape(datetime.utcnow().isoformat(timespec="seconds") + "Z"),
+        exported_at=html.escape(_utc_iso()),
         tab_buttons="".join(tab_buttons),
         panels="".join(panels),
     )
@@ -340,7 +348,7 @@ def export_basename(meta: Dict[str, Any]) -> str:
         seed = meta.get("log_path") or meta.get("ticker", "")
         run_id = "legacy-" + str(abs(hash(seed)))[:8]
     trade_date = meta.get("trade_date", "unknown")
-    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    ts = _utc_stamp()
     return f"{run_id}__{trade_date}__{ts}"
 
 

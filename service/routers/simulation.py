@@ -24,7 +24,7 @@ DELETE /sim/{id}      — delete
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -35,6 +35,10 @@ from pydantic import BaseModel, Field
 from gui import storage
 
 router = APIRouter(prefix="/sim", tags=["simulation"])
+
+
+def _utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 # ---- Schemas ---------------------------------------------------------
@@ -159,7 +163,7 @@ def _simulate(req: SimRunRequest) -> SimResult:
     baseline_return_pct = (final.baseline_spy / req.starting_capital - 1) * 100
 
     return SimResult(
-        name=req.name or f"sim @ {datetime.utcnow().isoformat(timespec='seconds')}Z",
+        name=req.name or f"sim @ {_utc_iso()}",
         starting_capital=req.starting_capital,
         expected_final_value=final.portfolio,
         expected_return_pct=expected_return_pct,

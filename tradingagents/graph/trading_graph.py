@@ -128,7 +128,7 @@ class TradingAgentsGraph:
 
         # State tracking
         self.curr_state = None
-        self.ticker = None
+        self.ticker: str | None = None
         self.log_states_dict: dict[str, dict[str, Any]] = {}  # date to full state dict
 
         # Graph-shape-affecting run choices, kept for the checkpoint signature.

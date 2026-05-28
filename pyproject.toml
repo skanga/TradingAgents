@@ -40,7 +40,8 @@ gui = [
     "markdown>=3.5",
 ]
 service = [
-    "fastapi>=0.115.0",
+    "fastapi>=0.136.3",
+    "starlette>=1.1.0",
     "uvicorn[standard]>=0.30.0",
     "websockets>=13.0",
     "markdown>=3.5",
@@ -72,6 +73,7 @@ tradingagents = ["agents/prompts/*.md"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers -p no:cacheprovider"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "unit: fast isolated unit tests",
     "integration: tests requiring external services",

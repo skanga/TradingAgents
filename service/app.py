@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,6 +58,15 @@ def _allowed_origins() -> list[str]:
     ]
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    await _startup()
+    try:
+        yield
+    finally:
+        await _shutdown()
+
+
 app = FastAPI(
     title="TradingAgents API",
     version="0.3.0",
@@ -65,6 +75,7 @@ app = FastAPI(
         "Next.js frontend; also usable directly as the integration surface "
         "for any custom client. OpenAPI docs at /docs."
     ),
+    lifespan=_lifespan,
 )
 
 app.add_middleware(
@@ -76,7 +87,6 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
 async def _startup() -> None:
     storage.init_db()
     loop = asyncio.get_running_loop()
@@ -92,7 +102,6 @@ async def _startup() -> None:
     logger.info("TradingAgents API ready. CORS origins: %s", _allowed_origins())
 
 
-@app.on_event("shutdown")
 async def _shutdown() -> None:
     await broadcaster.stop()
 

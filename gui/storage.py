@@ -14,7 +14,7 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
@@ -22,7 +22,11 @@ DB_PATH = Path.home() / ".tradingagents" / "gui.db"
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _utc_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
 def init_db() -> None:
@@ -198,7 +202,7 @@ def write_run_error_log(
 ) -> Path:
     ticker = str(meta.get("ticker") or "UNKNOWN").strip().upper() or "UNKNOWN"
     trade_date = str(meta.get("trade_date") or "unknown")
-    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    ts = _utc_stamp()
     path = DB_PATH.parent / "errors" / ticker / f"{run_id}__{trade_date}__{ts}.error.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {

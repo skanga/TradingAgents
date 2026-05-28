@@ -1,12 +1,15 @@
 """Tests for Anthropic effort-parameter gating."""
 
+from typing import Any
+
 import pytest
 
 from tradingagents.llm_clients import anthropic_client as mod
 
 
-def _capture_kwargs(monkeypatch):
-    captured: dict = {}
+def _capture_kwargs(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict[str, Any]]:
+    captured: dict[str, dict[str, Any]] = {}
+    monkeypatch.setattr(mod.AnthropicClient, "validate_model", lambda self: True)
     monkeypatch.setattr(
         mod,
         "NormalizedChatAnthropic",

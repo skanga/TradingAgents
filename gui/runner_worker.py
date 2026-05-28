@@ -31,13 +31,21 @@ import json
 import sys
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 from langchain_core.messages import AIMessage
+
+
+def _utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _utc_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
 def emit(event: Dict[str, Any]) -> None:
@@ -108,7 +116,7 @@ class GuiCallbackHandler(BaseCallbackHandler):
         self._pending_tool = {
             "tool": tool_name,
             "input": input_str or "",
-            "started_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "started_at": _utc_iso(),
         }
         emit({"type": "tool_start", "tool": tool_name, "input": (input_str or "")[:500]})
         self._maybe_emit_stats()
@@ -118,7 +126,7 @@ class GuiCallbackHandler(BaseCallbackHandler):
         if self._pending_tool is not None:
             entry = dict(self._pending_tool)
             entry["output"] = text
-            entry["ended_at"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            entry["ended_at"] = _utc_iso()
             self.tool_trace.append(entry)
             self._pending_tool = None
         emit({"type": "tool_end", "preview": text[:500]})
@@ -205,7 +213,7 @@ def _emit_chunk(chunk: Dict[str, Any], prev_seen: Dict[str, str]) -> None:
 def run(job: Dict[str, Any]) -> None:
     ticker = job["ticker"]
     trade_date = job["trade_date"]
-    started_iso = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    started_iso = _utc_iso()
 
     emit({"type": "start", "ticker": ticker, "trade_date": trade_date,
           "started_at": started_iso})
@@ -308,7 +316,7 @@ def run(job: Dict[str, Any]) -> None:
     archive_path: Optional[Path] = None
     run_id = job.get("run_id") or "norunid"
     archive_dir = report_dir / "runs"
-    completed_iso = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    completed_iso = _utc_iso()
     archive_doc = {
         "schema_version": 1,
         "kind": "tradingagents-gui-archive",
@@ -331,7 +339,7 @@ def run(job: Dict[str, Any]) -> None:
     }
     try:
         archive_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        ts = _utc_stamp()
         archive_path = archive_dir / f"{run_id}__{trade_date}__{ts}.json"
         archive_path.write_text(
             json.dumps(archive_doc, indent=2, default=str),
