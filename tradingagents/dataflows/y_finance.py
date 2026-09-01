@@ -1,9 +1,20 @@
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
 import logging
+from typing import Annotated
+
 import pandas as pd
 import yfinance as yf
-from .stockstats_utils import StockstatsUtils, yf_retry, load_ohlcv, filter_financials_by_date
+from dateutil.relativedelta import relativedelta
+
+from .stockstats_utils import (
+    StockstatsUtils,
+    _assert_ohlcv_not_stale,
+    filter_financials_by_date,
+    load_ohlcv,
+    yf_retry,
+)
+from .symbol_utils import NoMarketDataError, normalize_symbol
+
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +23,10 @@ def _parse_api_date(value: str, field_name: str) -> datetime:
     try:
         return datetime.strptime(value, "%Y-%m-%d")
     except ValueError as exc:
-        raise ValueError(f"{field_name} must use YYYY-MM-DD format, got {value!r}") from exc
+        raise ValueError(
+            f"{field_name} must use YYYY-MM-DD format, got {value!r}"
+        ) from exc
+
 
 def get_YFin_data_online(
     symbol: Annotated[str, "ticker symbol of the company"],
@@ -21,7 +35,7 @@ def get_YFin_data_online(
 ):
 
     _parse_api_date(start_date, "start_date")
-    _parse_api_date(end_date, "end_date")
+    end_dt = _parse_api_date(end_date, "end_date")
 
     # Resolve broker/forex symbols to Yahoo's convention (XAUUSD+ -> GC=F).
     canonical = normalize_symbol(symbol)
@@ -226,11 +240,20 @@ def _get_stock_stats_bulk(
 
     # Calculate the indicator for all rows at once
     df[indicator]  # This triggers stockstats to calculate the indicator
-    
-    return {
-        date_str: "N/A" if pd.isna(indicator_value) else str(indicator_value)
-        for date_str, indicator_value in zip(df["Date"], df[indicator])
-    }
+
+    # Create a dictionary mapping date strings to indicator values
+    result_dict = {}
+    for _, row in df.iterrows():
+        date_str = row["Date"]
+        indicator_value = row[indicator]
+
+        # Handle NaN/None values
+        if pd.isna(indicator_value):
+            result_dict[date_str] = "N/A"
+        else:
+            result_dict[date_str] = str(indicator_value)
+
+    return result_dict
 
 
 def get_stockstats_indicator(
@@ -266,8 +289,8 @@ def get_stockstats_indicator(
 
 def get_fundamentals(
     ticker: Annotated[str, "ticker symbol of the company"],
-    curr_date: Annotated[str | None, "current date (not used for yfinance)"] = None,
-) -> str:
+    curr_date: Annotated[str, "current date (not used for yfinance)"] = None
+):
     """Get company fundamentals overview from yfinance."""
     canonical = normalize_symbol(ticker)
     try:
@@ -334,8 +357,8 @@ def get_fundamentals(
 def get_balance_sheet(
     ticker: Annotated[str, "ticker symbol of the company"],
     freq: Annotated[str, "frequency of data: 'annual' or 'quarterly'"] = "quarterly",
-    curr_date: Annotated[str | None, "current date in YYYY-MM-DD format"] = None,
-) -> str:
+    curr_date: Annotated[str, "current date in YYYY-MM-DD format"] = None
+):
     """Get balance sheet data from yfinance."""
     canonical = normalize_symbol(ticker)
     try:
@@ -369,8 +392,8 @@ def get_balance_sheet(
 def get_cashflow(
     ticker: Annotated[str, "ticker symbol of the company"],
     freq: Annotated[str, "frequency of data: 'annual' or 'quarterly'"] = "quarterly",
-    curr_date: Annotated[str | None, "current date in YYYY-MM-DD format"] = None,
-) -> str:
+    curr_date: Annotated[str, "current date in YYYY-MM-DD format"] = None
+):
     """Get cash flow data from yfinance."""
     canonical = normalize_symbol(ticker)
     try:
@@ -404,8 +427,8 @@ def get_cashflow(
 def get_income_statement(
     ticker: Annotated[str, "ticker symbol of the company"],
     freq: Annotated[str, "frequency of data: 'annual' or 'quarterly'"] = "quarterly",
-    curr_date: Annotated[str | None, "current date in YYYY-MM-DD format"] = None,
-) -> str:
+    curr_date: Annotated[str, "current date in YYYY-MM-DD format"] = None
+):
     """Get income statement data from yfinance."""
     canonical = normalize_symbol(ticker)
     try:
