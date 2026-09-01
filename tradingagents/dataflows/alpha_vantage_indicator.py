@@ -1,8 +1,10 @@
 import logging
 
-from .alpha_vantage_common import _make_api_request
+from .alpha_vantage_common import AlphaVantageNotConfiguredError, _make_api_request
+
 
 logger = logging.getLogger(__name__)
+
 
 def get_indicator(
     symbol: str,
