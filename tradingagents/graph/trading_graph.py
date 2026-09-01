@@ -27,6 +27,7 @@ from tradingagents.agents.utils.agent_utils import (
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
 from tradingagents.dataflows.config import reset_config, use_config
+from tradingagents.dataflows.symbol_utils import normalize_symbol
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
@@ -54,6 +55,24 @@ def _coerce_positive_int(value: Any, name: str) -> int:
     if result <= 0:
         raise ValueError(f"{name} must be > 0")
     return result
+
+
+def _coerce_max_retries(value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValueError("llm_max_retries must be an integer, not a boolean")
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("llm_max_retries must be an integer") from exc
+    if isinstance(value, float) or (isinstance(value, str) and str(result) != value.strip()):
+        raise ValueError("llm_max_retries must be an integer")
+    if result < 0:
+        raise ValueError("llm_max_retries must be >= 0")
+    return result
+
+
+def _coerce_max_tokens(value: Any) -> int:
+    return _coerce_positive_int(value, "max_tokens")
 
 
 class TradingAgentsGraph:
@@ -210,11 +229,11 @@ class TradingAgentsGraph:
 
         max_retries = self.config.get("llm_max_retries")
         if max_retries not in (None, ""):
-            kwargs["max_retries"] = _coerce_positive_int(max_retries, "llm_max_retries")
+            kwargs["max_retries"] = _coerce_max_retries(max_retries)
 
         max_tokens = self.config.get("max_tokens")
         if max_tokens not in (None, ""):
-            token_cap = _coerce_positive_int(max_tokens, "max_tokens")
+            token_cap = _coerce_max_tokens(max_tokens)
             kwargs["max_output_tokens" if provider == "google" else "max_tokens"] = token_cap
 
         return kwargs
@@ -296,7 +315,7 @@ class TradingAgentsGraph:
             end = start + timedelta(days=holding_days + 7)  # buffer for weekends/holidays
             end_str = end.strftime("%Y-%m-%d")
 
-            stock = yf.Ticker(ticker).history(start=trade_date, end=end_str)
+            stock = yf.Ticker(normalize_symbol(ticker)).history(start=trade_date, end=end_str)
             bench = yf.Ticker(benchmark).history(start=trade_date, end=end_str)
 
             if len(stock) <= holding_days or len(bench) <= holding_days:
@@ -467,11 +486,17 @@ class TradingAgentsGraph:
             yield from self.graph.stream(self.checkpoint_input(initial_state), **args)
             self.clear_checkpoint_on_success(company_name, trade_date, asset_type)
 
+    @staticmethod
+    def _memory_as_of(trade_date: str) -> str | None:
+        """Limit historical runs to information resolved by their trade date."""
+        value = str(trade_date)
+        return value if value < datetime.now().strftime("%Y-%m-%d") else None
+
     def _run_graph(self, company_name, trade_date, asset_type: str = "stock",
                    checkpoint_thread_id: str | None = None):
         """Execute the graph and write the resulting state to disk and memory log."""
         # Initialize state — inject memory log context for PM.
-        historical_as_of = str(trade_date) if str(trade_date) < datetime.now().strftime("%Y-%m-%d") else None
+        historical_as_of = self._memory_as_of(trade_date)
         past_context = self.memory_log.get_past_context(company_name, as_of=historical_as_of)
         from tradingagents.agents.utils.agent_utils import build_instrument_context, resolve_instrument_identity
 

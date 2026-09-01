@@ -177,7 +177,7 @@ def build_instrument_context(
 
     if is_crypto:
         context += (
-            " Treat it as a crypto asset rather than a company, and do not "
+            " Treat it as a crypto asset rather than a company. Do not "
             "assume company fundamentals are available."
         )
     return context

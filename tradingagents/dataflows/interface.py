@@ -250,6 +250,21 @@ def route_to_vendor(method: str, *args, **kwargs):
             if first_error is None:
                 first_error = e
             continue
+        except ValueError as e:
+            # Older vendor adapters reported a missing credential as a plain
+            # ValueError. Preserve that classification while retaining the
+            # router's generic-error fallback for other adapter failures.
+            message = str(e)
+            missing_key = "API_KEY" in message and "not set" in message.lower()
+            logger.warning(
+                "Vendor %r %s for %s; trying next vendor.",
+                vendor,
+                "not configured" if missing_key else "failed",
+                method,
+            )
+            if first_error is None:
+                first_error = e
+            continue
         except Exception as e:
             # Don't let one vendor's failure crash the call when another can
             # serve it, but never swallow silently: a broken primary must be
