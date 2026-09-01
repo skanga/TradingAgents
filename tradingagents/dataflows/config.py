@@ -33,7 +33,7 @@ def set_config(config: Dict):
     _config_var.set(_merge_config(current, config))
 
 
-def get_config() -> dict:
+def get_config() -> Dict:
     """Get the current configuration."""
     cfg = _config_var.get()
     if cfg is None:
