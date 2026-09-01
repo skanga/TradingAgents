@@ -184,7 +184,7 @@ def _needs_same_day_refresh(data_file, curr_date_dt, today_date) -> bool:
 def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     """Fetch OHLCV data with caching, filtered to prevent look-ahead bias.
 
-    Downloads 5 years of data up to today and caches per symbol. On
+    Downloads 15 years of data up to today and caches per symbol. On
     subsequent calls the cache is reused. Rows after curr_date are
     filtered out so backtests never see future prices.
     """
@@ -197,7 +197,7 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     config = get_config()
     curr_date_dt = pd.to_datetime(curr_date).normalize()
 
-    # Cache uses a fixed window (5y to today) so one file per symbol.
+    # Cache uses a fixed window (15y to today) so one file per symbol.
     today_date = pd.Timestamp.today()
     start_date = today_date - pd.DateOffset(years=15)
     start_str = start_date.strftime("%Y-%m-%d")
@@ -211,19 +211,25 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
         config["data_cache_dir"],
         f"{safe_symbol}-YFin-data-{start_str}-{end_str}.csv",
     )
+    legacy_start_str = (today_date - pd.DateOffset(years=5)).strftime("%Y-%m-%d")
+    legacy_data_file = os.path.join(
+        config["data_cache_dir"],
+        f"{safe_symbol}-YFin-data-{legacy_start_str}-{end_str}.csv",
+    )
+    cache_file = data_file if os.path.exists(data_file) else legacy_data_file
 
     # A cached file may be empty if a prior fetch failed (unknown symbol,
     # transient rate limit). Treat an empty/columnless cache as a miss and
     # re-fetch rather than serving the poisoned file forever.
     data = None
-    if os.path.exists(data_file):
-        cached = pd.read_csv(data_file, on_bad_lines="skip", encoding="utf-8")
+    if os.path.exists(cache_file):
+        cached = pd.read_csv(cache_file, on_bad_lines="skip", encoding="utf-8")
         # Serve the cache only when it is usable and not a stale snapshot of the
         # day being requested (#1150); otherwise fall through and refetch.
         if (
             not cached.empty
             and "Close" in cached.columns
-            and not _needs_same_day_refresh(data_file, curr_date_dt, today_date)
+            and not _needs_same_day_refresh(cache_file, curr_date_dt, today_date)
         ):
             data = cached
 
@@ -268,9 +274,7 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     return data
 
 
-def filter_financials_by_date(
-    data: pd.DataFrame, curr_date: str | None
-) -> pd.DataFrame:
+def filter_financials_by_date(data: pd.DataFrame, curr_date: str) -> pd.DataFrame:
     """Drop financial statement columns (fiscal period timestamps) after curr_date.
 
     yfinance financial statements use fiscal period end dates as columns.
