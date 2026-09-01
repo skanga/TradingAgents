@@ -18,7 +18,7 @@ they share ``NoMarketDataError`` and differ only in the free-text ``detail``.
 from __future__ import annotations
 
 
-class VendorError(Exception):
+class VendorError(RuntimeError):
     """Base for any condition where a vendor could not return usable data."""
 
 
