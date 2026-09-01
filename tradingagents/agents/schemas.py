@@ -21,7 +21,19 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# LLMs sometimes write a placeholder string ("None", "N/A", ...) into an optional
+# numeric field instead of omitting it. Coerce those to None so the structured
+# call validates instead of erroring (#1058). Pydantic still parses real numeric
+# strings ("189.5") to float.
+_NULLISH_FLOAT = {"", "none", "n/a", "na", "null", "nil", "-", "tbd", "unknown"}
+
+
+def _coerce_optional_float(value):
+    if isinstance(value, str) and value.strip().lower() in _NULLISH_FLOAT:
+        return None
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -137,9 +149,13 @@ class TraderProposal(BaseModel):
         description="Optional sizing guidance, e.g. '5% of portfolio'.",
     )
 
+    @field_validator("entry_price", "stop_loss", mode="before")
+    @classmethod
+    def _nullish_float_to_none(cls, v):
+        return _coerce_optional_float(v)
+
     @model_validator(mode="after")
     def validate_stop_loss_direction(self) -> "TraderProposal":
-        """Reject stop-loss levels that contradict the proposed trade direction."""
         if self.entry_price is None or self.stop_loss is None:
             return self
         if self.action == TraderAction.BUY and self.stop_loss >= self.entry_price:

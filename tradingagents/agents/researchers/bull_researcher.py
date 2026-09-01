@@ -5,9 +5,6 @@ from tradingagents.agents.utils.agent_utils import (
 )
 
 
-from tradingagents.agents.utils.prompts import render_prompt_template
-
-
 def create_bull_researcher(llm):
     def bull_node(state) -> dict:
         investment_debate_state = state["investment_debate_state"]
@@ -30,17 +27,25 @@ def create_bull_researcher(llm):
             else "Asset fundamentals report (may be unavailable for crypto)"
         )
 
-        prompt = render_prompt_template(
-            "bull_researcher.md",
-            {
-                "market_research_report": market_research_report,
-                "sentiment_report": sentiment_report,
-                "news_report": news_report,
-                "fundamentals_report": fundamentals_report,
-                "history": history,
-                "current_response": current_response,
-            },
-        )
+        prompt = f"""You are a Bull Analyst advocating for investing in the {target_label}. Your task is to build a strong, evidence-based case emphasizing growth potential, competitive advantages, and positive market indicators. Leverage the provided research and data to address concerns and counter bearish arguments effectively.
+
+Key points to focus on:
+- Growth Potential: Highlight the company's market opportunities, revenue projections, and scalability.
+- Competitive Advantages: Emphasize factors like unique products, strong branding, or dominant market positioning.
+- Positive Indicators: Use financial health, industry trends, and recent positive news as evidence.
+- Bear Counterpoints: Critically analyze the bear argument with specific data and sound reasoning, addressing concerns thoroughly and showing why the bull perspective holds stronger merit.
+- Engagement: Present your argument in a conversational style, engaging directly with the bear analyst's points and debating effectively rather than just listing data.
+
+Resources available:
+{instrument_context}
+Market research report: {market_research_report}
+Social media sentiment report: {sentiment_report}
+Latest world affairs news: {news_report}
+{fundamentals_label}: {fundamentals_report}
+Conversation history of the debate: {history}
+Last bear argument: {current_response}
+Use this information to deliver a compelling bull argument, refute the bear's concerns, and engage in a dynamic debate that demonstrates the strengths of the bull position.
+""" + get_language_instruction()
 
         response = llm.invoke(prompt)
 
@@ -51,8 +56,8 @@ def create_bull_researcher(llm):
             "bull_history": bull_history + "\n" + argument,
             "bear_history": investment_debate_state.get("bear_history", ""),
             "current_response": argument,
-            "last_debater": "bull",
             "count": investment_debate_state["count"] + 1,
+            "last_debater": "bull",
         }
 
         return {"investment_debate_state": new_investment_debate_state}

@@ -21,22 +21,32 @@ from tradingagents.agents.utils.news_data_tools import (
     get_insider_transactions,
     get_news,
 )
+from tradingagents.agents.utils.prediction_markets_tools import get_prediction_markets
 from tradingagents.agents.utils.technical_indicators_tools import get_indicators
 
+# Public surface: the data tools are imported here so agents and the graph
+# import them from one place, plus the instrument/language helpers defined below.
 __all__ = [
-    "build_instrument_context",
-    "create_msg_delete",
+    "get_stock_data",
+    "get_indicators",
+    "get_fundamentals",
     "get_balance_sheet",
     "get_cashflow",
-    "get_fundamentals",
-    "get_global_news",
     "get_income_statement",
-    "get_indicators",
-    "get_insider_transactions",
-    "get_language_instruction",
     "get_news",
-    "get_stock_data",
+    "get_global_news",
+    "get_insider_transactions",
+    "get_macro_indicators",
+    "get_prediction_markets",
+    "get_verified_market_snapshot",
+    "build_instrument_context",
+    "resolve_instrument_identity",
+    "get_instrument_context_from_state",
+    "get_language_instruction",
+    "create_msg_delete",
 ]
+
+logger = logging.getLogger(__name__)
 
 
 def get_language_instruction() -> str:
@@ -55,19 +65,59 @@ def get_language_instruction() -> str:
     return f" Write your entire response in {lang}."
 
 
-def build_instrument_context(ticker: str, asset_type: str = "stock") -> str:
-    """Describe the exact instrument so agents preserve exchange-qualified tickers."""
-    instrument_label = "crypto asset" if asset_type == "crypto" else "instrument"
-    extra_hint = (
-        " Do not assume company fundamentals are available."
-        if asset_type == "crypto"
-        else ""
-    )
-    return (
-        f"The {instrument_label} to analyze is `{ticker}`. "
-        "Use this exact ticker in every tool call, report, and recommendation, "
-        "preserving any exchange suffix (e.g. `.TO`, `.L`, `.HK`, `.T`, `-USD`)."
-        + extra_hint
+def opponent_argument_or_opening(text: str, opponent: str) -> str:
+    """Opponent's latest argument, or an explicit opening marker when empty.
+
+    The first speaker in each debate round receives an empty opponent response;
+    interpolating it into a "refute the opponent" prompt makes the model
+    fabricate the other side's position. Returning a clear "has not spoken yet"
+    marker instead lets it open with its own case (#1176).
+    """
+    text = (text or "").strip()
+    if text:
+        return text
+    return f"(The {opponent} has not spoken yet — open the debate with your own case.)"
+
+
+def _clean_identity_value(value: Any) -> str | None:
+    """Return a trimmed string, or None for empty / placeholder-ish values."""
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    if not cleaned or cleaned.lower() in {"none", "n/a", "nan", "null"}:
+        return None
+    return cleaned
+
+
+@functools.lru_cache(maxsize=256)
+def resolve_instrument_identity(ticker: str) -> dict:
+    """Resolve deterministic identity metadata (company name, sector, …) for a ticker.
+
+    This exists to stop the pipeline from hallucinating a *different* company
+    when a chart pattern suggests a different industry than the real one
+    (#814): without a ground-truth name, the market analyst would pattern-match
+    the price action to a narrative and invent an identity that then cascaded
+    through every downstream agent.
+
+    Best-effort by design: if yfinance is unavailable, rate-limited, or doesn't
+    recognise the ticker, we return ``{}`` and the caller falls back to
+    ticker-only context rather than failing before analysis starts. Cached so
+    the lookup happens at most once per ticker per process.
+
+    The symbol is normalized first (e.g. ``XAUUSD`` -> ``GC=F``) so identity
+    resolves for the same instrument the price path actually fetches (#983).
+    """
+    from tradingagents.dataflows.symbol_utils import normalize_symbol
+
+    try:
+        info = yf.Ticker(normalize_symbol(ticker)).info or {}
+    except Exception as exc:  # noqa: BLE001 — fail open, never block the run
+        logger.debug("Could not resolve instrument identity for %s: %s", ticker, exc)
+        return {}
+
+    identity: dict[str, str] = {}
+    company_name = _clean_identity_value(info.get("longName")) or _clean_identity_value(
+        info.get("shortName")
     )
     if company_name:
         identity["company_name"] = company_name
@@ -145,8 +195,11 @@ def get_instrument_context_from_state(state: Mapping[str, Any]) -> str:
     context = state.get("instrument_context")
     if isinstance(context, str) and context.strip():
         return context
+    ticker = state.get("company_of_interest")
+    if not ticker:
+        return "Instrument identity was not provided; use only the supplied reports."
     return build_instrument_context(
-        str(state["company_of_interest"]),
+        str(ticker),
         state.get("asset_type", "stock"),
     )
 

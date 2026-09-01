@@ -7,8 +7,10 @@ import functools
 from langchain_core.messages import AIMessage
 
 from tradingagents.agents.schemas import TraderProposal, render_trader_proposal
-from tradingagents.agents.utils.agent_utils import build_instrument_context
-from tradingagents.agents.utils.prompts import render_prompt_template
+from tradingagents.agents.utils.agent_utils import (
+    get_instrument_context_from_state,
+    get_language_instruction,
+)
 from tradingagents.agents.utils.structured import (
     NO_EXTERNAL_TOOLS,
     bind_structured,
@@ -21,10 +23,7 @@ def create_trader(llm):
 
     def trader_node(state, name):
         company_name = state["company_of_interest"]
-        instrument_context = build_instrument_context(
-            company_name,
-            asset_type=state.get("asset_type", "stock"),
-        )
+        instrument_context = get_instrument_context_from_state(state)
         investment_plan = state["investment_plan"]
         # The research plan digests the debate but loses exact price structure;
         # give the Trader the technical market report so entry/stop levels are
@@ -47,17 +46,25 @@ def create_trader(llm):
         messages = [
             {
                 "role": "system",
-                "content": render_prompt_template("trader_system.md", {}),
+                "content": (
+                    "You are a trading agent analyzing market data to make investment decisions. "
+                    "Based on your analysis, provide a specific recommendation to buy, sell, or hold. "
+                    "Use plain ASCII punctuation in structured fields. "
+                    "Do not use smart quotes or Unicode dash characters. "
+                    "Buy stop_loss must be below entry_price; Sell stop_loss must be above entry_price. "
+                    + grounding
+                    + NO_EXTERNAL_TOOLS
+                    + get_language_instruction()
+                ),
             },
             {
                 "role": "user",
-                "content": render_prompt_template(
-                    "trader_user.md",
-                    {
-                        "company_name": company_name,
-                        "instrument_context": instrument_context,
-                        "investment_plan": investment_plan,
-                    },
+                "content": (
+                    f"Here is the research team's investment plan for {company_name}. "
+                    f"{instrument_context}\n\n"
+                    f"{report_section}"
+                    f"Proposed Investment Plan:\n{investment_plan}\n\n"
+                    f"Make an informed, strategic trading decision."
                 ),
             },
         ]

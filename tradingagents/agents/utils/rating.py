@@ -78,6 +78,11 @@ def parse_rating(text: str, default: str = "Hold") -> str:
     return rating if rating is not None else default
 
 
+def parse_actionable_rating(text: str) -> str:
+    """Parse a decision without silently converting malformed output to Hold."""
+    return parse_rating(text, default=RATING_REVIEW)
+
+
 def is_review(signal: str) -> bool:
     """Whether a signal is the non-tradeable REVIEW sentinel (#1170)."""
     return signal == RATING_REVIEW
