@@ -40,6 +40,12 @@ _ENV_VARS = {
     "anthropic_effort": "TRADINGAGENTS_ANTHROPIC_EFFORT",
 }
 
+_ENV_ALIASES = {
+    "quick_model": "TRADINGAGENTS_QUICK_THINK_LLM",
+    "deep_model": "TRADINGAGENTS_DEEP_THINK_LLM",
+    "backend_url": "TRADINGAGENTS_LLM_BACKEND_URL",
+}
+
 
 def resolve_llm_config(overrides: LLMConfigOverrides | None = None) -> ResolvedLLMConfig:
     overrides = overrides or LLMConfigOverrides()
@@ -53,7 +59,9 @@ def resolve_llm_config(overrides: LLMConfigOverrides | None = None) -> ResolvedL
     for field, env_var in _ENV_VARS.items():
         if field == "provider":
             continue
-        env_value = os.environ.get(env_var) if use_env_provider_config else None
+        env_value = None
+        if use_env_provider_config:
+            env_value = os.environ.get(env_var) or os.environ.get(_ENV_ALIASES.get(field, ""))
         values[field] = _first_present(getattr(overrides, field), env_value)
 
     return ResolvedLLMConfig(**values)
