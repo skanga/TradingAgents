@@ -1,18 +1,17 @@
-import questionary
-import requests
-from typing import List, Tuple
+import os
+from pathlib import Path
 
 import questionary
 from dotenv import find_dotenv, set_key
 from rich.console import Console
 
 from cli.models import AnalystType, AssetType
-from tradingagents.dataflows.utils import safe_ticker_component
+from tradingagents.llm_clients.api_key_env import get_api_key_env
 from tradingagents.llm_clients.model_catalog import get_model_options
 
 console = Console()
 
-TICKER_INPUT_EXAMPLES = "Examples: SPY, CNC.TO, 7203.T, 0700.HK, BTC-USD"
+TICKER_INPUT_EXAMPLES = "SPY, 0700.HK, BTC-USD"
 
 ANALYST_ORDER = [
     ("Market Analyst", AnalystType.MARKET),
@@ -24,6 +23,17 @@ ANALYST_ORDER = [
 CRYPTO_SUFFIXES = ("-USD", "-USDT", "-USDC", "-BTC", "-ETH")
 
 
+def is_valid_ticker_input(value: str) -> bool:
+    """Whether a ticker entry is acceptable (charset + length).
+
+    Allows the characters Yahoo symbols use, including ``=`` for futures/forex
+    like ``GC=F`` and ``EURUSD=X`` (#980), and ``^`` for indices. Empty input is
+    allowed (it defaults to SPY downstream).
+    """
+    v = value.strip()
+    return not v or (all(ch.isalnum() or ch in "._-^=" for ch in v) and len(v) <= 32)
+
+
 def get_ticker() -> str:
     """Prompt the user to enter a ticker symbol, preserving exchange suffixes.
 
@@ -32,8 +42,11 @@ def get_ticker() -> str:
     obvious typo is caught before the run starts.
     """
     ticker = questionary.text(
-        f"Enter the exact ticker symbol to analyze ({TICKER_INPUT_EXAMPLES}):",
-        validate=_validate_ticker_input,
+        f"Enter ticker symbol (e.g. {TICKER_INPUT_EXAMPLES}):",
+        validate=lambda x: (
+            is_valid_ticker_input(x)
+            or "Please enter a valid ticker symbol, e.g. AAPL, 000404.SZ, 0700.HK, GC=F."
+        ),
         style=questionary.Style(
             [
                 ("text", "fg:green"),
@@ -50,29 +63,36 @@ def get_ticker() -> str:
 
 
 def normalize_ticker_symbol(ticker: str) -> str:
-    """Normalize ticker input while preserving exchange suffixes and rejecting unsafe path components."""
-    normalized = ticker.strip().upper()
-    return safe_ticker_component(normalized)
+    """Resolve user input to its canonical Yahoo symbol (single source of truth).
 
+    Delegates to the data layer's ``normalize_symbol`` so the symbol the CLI
+    passes through the pipeline is exactly the one the data path will price
+    (e.g. ``BTCUSD`` -> ``BTC-USD``, ``XAUUSD`` -> ``GC=F``). Falls back to the
+    plain upper-case if the data layer is unavailable.
+    """
+    from tradingagents.dataflows.utils import safe_ticker_component
 
-def _validate_ticker_input(value: str) -> bool | str:
+    safe_ticker_component(ticker.strip())
     try:
-        normalize_ticker_symbol(value)
-        return True
-    except ValueError as exc:
-        return str(exc)
+        from tradingagents.dataflows.symbol_utils import normalize_symbol
+
+        return normalize_symbol(ticker)
+    except Exception:
+        return ticker.strip().upper()
 
 
 def detect_asset_type(ticker: str) -> AssetType:
-    normalized_ticker = ticker.strip().upper()
-    if normalized_ticker.endswith(CRYPTO_SUFFIXES):
+    """Classify on the canonical symbol so e.g. BTCUSD and BTC-USDT both read as
+    crypto (#981/#982), matching what the data path will actually fetch."""
+    canonical = normalize_ticker_symbol(ticker)
+    if canonical.endswith(CRYPTO_SUFFIXES):
         return AssetType.CRYPTO
     return AssetType.STOCK
 
 
 def filter_analysts_for_asset_type(
-    analysts: List[AnalystType], asset_type: AssetType
-) -> List[AnalystType]:
+    analysts: list[AnalystType], asset_type: AssetType
+) -> list[AnalystType]:
     if asset_type != AssetType.CRYPTO:
         return analysts
     return [
@@ -115,7 +135,7 @@ def get_analysis_date() -> str:
     return date.strip()
 
 
-def select_analysts(asset_type: AssetType = AssetType.STOCK) -> List[AnalystType]:
+def select_analysts(asset_type: AssetType = AssetType.STOCK) -> list[AnalystType]:
     """Select analysts using an interactive checkbox."""
     available_analysts = filter_analysts_for_asset_type(
         [value for _, value in ANALYST_ORDER],
@@ -194,6 +214,7 @@ _OPENROUTER_MAINSTREAM = {
 
 def _fetch_openrouter_models() -> list[tuple[str, str]]:
     """Fetch available models from the OpenRouter API."""
+    import requests
     try:
         resp = requests.get("https://openrouter.ai/api/v1/models", timeout=10)
         resp.raise_for_status()
@@ -550,6 +571,86 @@ def ask_minimax_region() -> tuple[str, str]:
             ("pointer", "fg:cyan noinherit"),
         ]),
     ).ask()
+
+
+def confirm_ollama_endpoint(url: str) -> None:
+    """Show the resolved Ollama endpoint after provider selection.
+
+    Surfaces three things the user benefits from seeing before model
+    selection: which URL we'll actually hit, where it came from
+    (`OLLAMA_BASE_URL` vs default), and a soft warning if the URL is
+    missing the scheme/port that ollama-serve expects. The warning is
+    advisory only — we don't reject malformed input, since the user may
+    be doing something deliberately unusual (e.g. a reverse-proxy path).
+    """
+    from_env = os.environ.get("OLLAMA_BASE_URL")
+    origin = " (from OLLAMA_BASE_URL)" if from_env and from_env == url else ""
+    console.print(f"[green]✓ Using Ollama at {url}{origin}[/green]")
+
+    if not url.startswith(("http://", "https://")):
+        console.print(
+            f"[yellow]Note: {url!r} is missing a scheme. "
+            f"Ollama-serve typically expects a URL like "
+            f"http://<host>:11434/v1.[/yellow]"
+        )
+    elif ":11434" not in url and "://localhost" not in url and "://127.0.0.1" not in url:
+        # Soft hint when the port differs from the ollama-serve default
+        # and the host isn't local (where users sometimes proxy on :80).
+        console.print(
+            f"[yellow]Note: {url!r} doesn't include port 11434. "
+            f"Make sure your remote ollama-serve listens on the port "
+            f"shown above.[/yellow]"
+        )
+
+
+def ensure_api_key(provider: str) -> str | None:
+    """Make sure the API key for `provider` is available in the environment.
+
+    If the env var is already set, returns its value untouched. Otherwise
+    interactively prompts the user, persists the value to the project's
+    .env file via python-dotenv's set_key (creating .env if needed), and
+    exports it into os.environ so the current process picks it up.
+
+    Returns None for providers that do not require a key (e.g. ollama)
+    and for providers not found in the canonical mapping.
+    """
+    env_var = get_api_key_env(provider)
+    if env_var is None:
+        return None  # ollama / unknown — no key check possible
+
+    # Key-optional providers (generic OpenAI-compatible / local servers) read the
+    # key when present but must never force an interactive prompt.
+    from tradingagents.llm_clients.openai_client import OPENAI_COMPATIBLE_PROVIDERS
+    spec = OPENAI_COMPATIBLE_PROVIDERS.get(provider.lower())
+    if spec is not None and spec.key_optional:
+        return os.environ.get(env_var)
+
+    existing = os.environ.get(env_var)
+    if existing:
+        return existing
+
+    console.print(
+        f"\n[yellow]{env_var} is not set in your environment.[/yellow]"
+    )
+    key = questionary.password(
+        f"Paste your {env_var} (will be saved to .env):",
+        style=questionary.Style([
+            ("text", "fg:cyan"),
+            ("highlighted", "noinherit"),
+        ]),
+    ).ask()
+    if not key:
+        console.print(
+            f"[red]Skipped. API calls will fail until {env_var} is set.[/red]"
+        )
+        return None
+
+    env_path = find_dotenv(usecwd=True) or str(Path.cwd() / ".env")
+    Path(env_path).touch(exist_ok=True)
+    set_key(env_path, env_var, key)
+    os.environ[env_var] = key
+    console.print(f"[green]Saved {env_var} to {env_path}[/green]")
+    return key
 
 
 def ask_output_language() -> str:

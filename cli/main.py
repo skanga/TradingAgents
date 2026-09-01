@@ -1,6 +1,8 @@
 import datetime
 from html import escape
 import inspect
+import os
+import sys
 import time
 from collections import deque
 import questionary
@@ -39,6 +41,7 @@ from cli.utils import (
     confirm_ollama_endpoint,
     detect_asset_type,
     filter_analysts_for_asset_type,
+    get_ticker,
     normalize_ticker_symbol,
     select_analysts,
     select_deep_thinking_agent,
@@ -72,11 +75,6 @@ load_dotenv(find_dotenv(".env.enterprise", usecwd=True), override=False)
 
 console = Console()
 
-# prompt_toolkit's win32 output module is importable only on Windows (it asserts
-# the platform at import time), so gate on the platform rather than catching the
-# failure — that way a genuinely broken prompt_toolkit on Windows still surfaces
-# instead of silently disabling the handler below. Off Windows this stays an
-# empty tuple, which `except` accepts and never matches (#1138).
 if sys.platform == "win32":  # pragma: no cover - platform dependent
     from prompt_toolkit.output.win32 import NoConsoleScreenBufferError
 
@@ -292,7 +290,7 @@ class MessageBuffer:
             if content is not None:
                 latest_section = section
                 latest_content = content
-
+               
         if latest_section and latest_content:
             # Format the current section for display
             section_titles = {
@@ -617,6 +615,24 @@ def get_user_selections(
     selected_analysts = selection_overrides.analysts
     selected_research_depth = selection_overrides.research_depth
 
+    if resolved_llm is None and os.environ.get("TRADINGAGENTS_LLM_PROVIDER"):
+        resolved_llm = ResolvedLLMConfig(
+            provider=cast(str | None, DEFAULT_CONFIG.get("llm_provider")),
+            quick_model=cast(str | None, DEFAULT_CONFIG.get("quick_think_llm")),
+            deep_model=cast(str | None, DEFAULT_CONFIG.get("deep_think_llm")),
+            backend_url=cast(str | None, DEFAULT_CONFIG.get("backend_url")),
+            google_thinking_level=cast(str | None, DEFAULT_CONFIG.get("google_thinking_level")),
+            openai_reasoning_effort=cast(str | None, DEFAULT_CONFIG.get("openai_reasoning_effort")),
+            anthropic_effort=cast(str | None, DEFAULT_CONFIG.get("anthropic_effort")),
+        )
+    if output_language is None and os.environ.get("TRADINGAGENTS_OUTPUT_LANGUAGE"):
+        output_language = cast(str, DEFAULT_CONFIG.get("output_language", "English"))
+    if selected_research_depth is None and (
+        os.environ.get("TRADINGAGENTS_MAX_DEBATE_ROUNDS")
+        and os.environ.get("TRADINGAGENTS_MAX_RISK_ROUNDS")
+    ):
+        selected_research_depth = int(DEFAULT_CONFIG["max_debate_rounds"])
+
     has_all_run_inputs = bool(
         selected_ticker
         and analysis_date
@@ -650,7 +666,7 @@ def get_user_selections(
         )
 
     # Display ASCII art welcome message
-    with open(Path(__file__).parent / "static" / "welcome.txt", encoding="utf-8") as f:
+    with open(Path(__file__).parent / "static" / "welcome.txt", "r", encoding="utf-8") as f:
         welcome_ascii = f.read()
 
     # Create welcome box content
@@ -828,6 +844,7 @@ def get_user_selections(
                 "Configure Claude effort level"
             )
         )
+        anthropic_effort = ask_anthropic_effort()
 
     return _build_user_selections(
         resolved_llm=ResolvedLLMConfig(
@@ -873,29 +890,6 @@ def _build_user_selections(
         "anthropic_effort": resolved_llm.anthropic_effort,
         "output_language": output_language,
     }
-
-
-def get_ticker():
-    """Get ticker symbol from user input, preserving exchange suffixes."""
-    # typer.prompt strips trailing dot-suffixes on some shells (e.g. 000404.SH
-    # collapses to 000404). questionary.text reads the raw line.
-    ticker = questionary.text(
-        "",
-        validate=lambda value: (
-            not value.strip()
-            or (
-                all(ch.isalnum() or ch in "._-^" for ch in value.strip())
-                and len(value.strip()) <= 32
-            )
-        )
-        or "Please enter a valid ticker symbol, e.g. AAPL, 000404.SZ, 0700.HK.",
-    ).ask()
-
-    if ticker is None:
-        console.print("\n[red]No ticker symbol provided. Exiting...[/red]")
-        raise typer.Exit(1)
-
-    return (ticker.strip() or "SPY").upper()
 
 
 def get_analysis_date():
@@ -1399,12 +1393,9 @@ def update_analyst_statuses(message_buffer, chunk, wall_time_tracker=None):
             message_buffer.update_agent_status(agent_name, "pending")
 
     # When all analysts complete, transition research team to in_progress
-    if (
-        not found_active
-        and selected
-        and message_buffer.agent_status.get("Bull Researcher") == "pending"
-    ):
-        message_buffer.update_agent_status("Bull Researcher", "in_progress")
+    if not found_active and selected:
+        if message_buffer.agent_status.get("Bull Researcher") == "pending":
+            message_buffer.update_agent_status("Bull Researcher", "in_progress")
 
 def extract_content_string(content):
     """Extract string content from various message formats.
@@ -1526,23 +1517,8 @@ def _validate_analysis_date_option(value: str | None) -> str | None:
     return value
 
 
-def run_analysis(
-    checkpoint: bool = False,
-    llm_overrides: LLMConfigOverrides | None = None,
-    selection_overrides: SelectionOverrides | None = None,
-) -> AnalysisRunResult:
-    # First get all user selections
-    resolved_llm = resolve_llm_config(llm_overrides)
-    selection_overrides = selection_overrides or SelectionOverrides()
-    selections = get_user_selections(resolved_llm, selection_overrides)
-
-    Round counts and checkpoint follow "explicit env/flag wins": an env-applied
-    value on DEFAULT_CONFIG is preserved unless the user overrode it on the CLI.
-    """
+def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     config = DEFAULT_CONFIG.copy()
-    # Research depth sets both round counts, but an explicit env override
-    # (TRADINGAGENTS_MAX_DEBATE_ROUNDS / _MAX_RISK_ROUNDS) wins over the
-    # interactive selection — leave the env-applied value in place (#977).
     if not os.environ.get("TRADINGAGENTS_MAX_DEBATE_ROUNDS"):
         config["max_debate_rounds"] = selections["research_depth"]
     if not os.environ.get("TRADINGAGENTS_MAX_RISK_ROUNDS"):
@@ -1551,12 +1527,26 @@ def run_analysis(
     config["deep_think_llm"] = selections["deep_thinker"]
     config["backend_url"] = selections["backend_url"]
     config["llm_provider"] = selections["llm_provider"].lower()
-    # Provider-specific thinking configuration
     config["google_thinking_level"] = selections.get("google_thinking_level")
     config["openai_reasoning_effort"] = selections.get("openai_reasoning_effort")
     config["anthropic_effort"] = selections.get("anthropic_effort")
     config["output_language"] = selections.get("output_language", "English")
-    config["checkpoint_enabled"] = checkpoint
+    if checkpoint is not None:
+        config["checkpoint_enabled"] = checkpoint
+    return config
+
+
+def run_analysis(
+    checkpoint: bool | None = None,
+    llm_overrides: LLMConfigOverrides | None = None,
+    selection_overrides: SelectionOverrides | None = None,
+) -> AnalysisRunResult:
+    # First get all user selections
+    resolved_llm = resolve_llm_config(llm_overrides)
+    selection_overrides = selection_overrides or SelectionOverrides()
+    selections = get_user_selections(resolved_llm, selection_overrides)
+
+    config = _build_run_config(selections, checkpoint)
     llm_metadata = build_llm_report_metadata(selections)
     safe_ticker = normalize_ticker_symbol(selections["ticker"])
     selections["ticker"] = safe_ticker
@@ -1646,39 +1636,27 @@ def run_analysis(
         # (LLM tracking is handled separately via LLM constructor)
         args = graph.propagator.get_graph_args(callbacks=[stats_handler])
 
-        # Recompile with a checkpointer and inject the thread_id so --checkpoint
-        # actually saves and resumes on the CLI path (#1249); a no-op when
-        # checkpointing is disabled. Torn down in the finally below.
-        checkpoint_tid = graph.begin_checkpoint(
-            selections["ticker"], selections["analysis_date"], selections["asset_type"]
-        )
-        if checkpoint_tid is not None:
-            args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = checkpoint_tid
-
-        # Stream the analysis. On resume, feed None so LangGraph continues the
-        # interrupted run instead of re-appending the initial state (#1249); the
-        # try/finally tears the checkpointer down even if the stream raises.
+        # Stream the analysis
         trace = []
-        try:
-            for chunk in graph.graph.stream(graph.checkpoint_input(init_agent_state), **args):
-                # Process all messages in chunk, deduplicating by message ID
-                for message in chunk.get("messages", []):
-                    msg_id = getattr(message, "id", None)
-                    if msg_id is not None:
-                        if msg_id in message_buffer._processed_message_ids:
-                            continue
-                        message_buffer._processed_message_ids.add(msg_id)
+        for chunk in graph.graph.stream(init_agent_state, **args):
+            # Process all messages in chunk, deduplicating by message ID
+            for message in chunk.get("messages", []):
+                msg_id = getattr(message, "id", None)
+                if msg_id is not None:
+                    if msg_id in message_buffer._processed_message_ids:
+                        continue
+                    message_buffer._processed_message_ids.add(msg_id)
 
-                    msg_type, content = classify_message_type(message)
-                    if content and content.strip():
-                        message_buffer.add_message(msg_type, content)
+                msg_type, content = classify_message_type(message)
+                if content and content.strip():
+                    message_buffer.add_message(msg_type, content)
 
-                    if hasattr(message, "tool_calls") and message.tool_calls:
-                        for tool_call in message.tool_calls:
-                            if isinstance(tool_call, dict):
-                                message_buffer.add_tool_call(tool_call["name"], tool_call["args"])
-                            else:
-                                message_buffer.add_tool_call(tool_call.name, tool_call.args)
+                if hasattr(message, "tool_calls") and message.tool_calls:
+                    for tool_call in message.tool_calls:
+                        if isinstance(tool_call, dict):
+                            message_buffer.add_tool_call(tool_call["name"], tool_call["args"])
+                        else:
+                            message_buffer.add_tool_call(tool_call.name, tool_call.args)
 
             # Update analyst statuses based on report state (runs on every chunk)
             update_analyst_statuses(
@@ -1717,68 +1695,38 @@ def run_analysis(
                 message_buffer.update_report_section(
                     "trader_investment_plan", chunk["trader_investment_plan"]
                 )
+                if message_buffer.agent_status.get("Trader") != "completed":
+                    message_buffer.update_agent_status("Trader", "completed")
+                    message_buffer.update_agent_status("Aggressive Analyst", "in_progress")
 
-                # Research Team - Handle Investment Debate State
-                if chunk.get("investment_debate_state"):
-                    debate_state = chunk["investment_debate_state"]
-                    bull_hist = debate_state.get("bull_history", "").strip()
-                    bear_hist = debate_state.get("bear_history", "").strip()
-                    judge = debate_state.get("judge_decision", "").strip()
+            # Risk Management Team - Handle Risk Debate State
+            if chunk.get("risk_debate_state"):
+                risk_state = chunk["risk_debate_state"]
+                agg_hist = risk_state.get("aggressive_history", "").strip()
+                con_hist = risk_state.get("conservative_history", "").strip()
+                neu_hist = risk_state.get("neutral_history", "").strip()
+                judge = risk_state.get("judge_decision", "").strip()
 
-                    # Only update status when there's actual content
-                    if bull_hist or bear_hist:
-                        update_research_team_status("in_progress")
-                    if bull_hist:
-                        message_buffer.update_report_section(
-                            "investment_plan", f"### Bull Researcher Analysis\n{bull_hist}"
-                        )
-                    if bear_hist:
-                        message_buffer.update_report_section(
-                            "investment_plan", f"### Bear Researcher Analysis\n{bear_hist}"
-                        )
-                    if judge:
-                        message_buffer.update_report_section(
-                            "investment_plan", f"### Research Manager Decision\n{judge}"
-                        )
-                        update_research_team_status("completed")
-                        message_buffer.update_agent_status("Trader", "in_progress")
-
-                # Trading Team
-                if chunk.get("trader_investment_plan"):
-                    message_buffer.update_report_section(
-                        "trader_investment_plan", chunk["trader_investment_plan"]
-                    )
-                    if message_buffer.agent_status.get("Trader") != "completed":
-                        message_buffer.update_agent_status("Trader", "completed")
+                if agg_hist:
+                    if message_buffer.agent_status.get("Aggressive Analyst") != "completed":
                         message_buffer.update_agent_status("Aggressive Analyst", "in_progress")
-
-                # Risk Management Team - Handle Risk Debate State
-                if chunk.get("risk_debate_state"):
-                    risk_state = chunk["risk_debate_state"]
-                    agg_hist = risk_state.get("aggressive_history", "").strip()
-                    con_hist = risk_state.get("conservative_history", "").strip()
-                    neu_hist = risk_state.get("neutral_history", "").strip()
-                    judge = risk_state.get("judge_decision", "").strip()
-
-                    if agg_hist:
-                        if message_buffer.agent_status.get("Aggressive Analyst") != "completed":
-                            message_buffer.update_agent_status("Aggressive Analyst", "in_progress")
-                        message_buffer.update_report_section(
-                            "final_trade_decision", f"### Aggressive Analyst Analysis\n{agg_hist}"
-                        )
-                    if con_hist:
-                        if message_buffer.agent_status.get("Conservative Analyst") != "completed":
-                            message_buffer.update_agent_status("Conservative Analyst", "in_progress")
-                        message_buffer.update_report_section(
-                            "final_trade_decision", f"### Conservative Analyst Analysis\n{con_hist}"
-                        )
-                    if neu_hist:
-                        if message_buffer.agent_status.get("Neutral Analyst") != "completed":
-                            message_buffer.update_agent_status("Neutral Analyst", "in_progress")
-                        message_buffer.update_report_section(
-                            "final_trade_decision", f"### Neutral Analyst Analysis\n{neu_hist}"
-                        )
-                    if judge and message_buffer.agent_status.get("Portfolio Manager") != "completed":
+                    message_buffer.update_report_section(
+                        "final_trade_decision", f"### Aggressive Analyst Analysis\n{agg_hist}"
+                    )
+                if con_hist:
+                    if message_buffer.agent_status.get("Conservative Analyst") != "completed":
+                        message_buffer.update_agent_status("Conservative Analyst", "in_progress")
+                    message_buffer.update_report_section(
+                        "final_trade_decision", f"### Conservative Analyst Analysis\n{con_hist}"
+                    )
+                if neu_hist:
+                    if message_buffer.agent_status.get("Neutral Analyst") != "completed":
+                        message_buffer.update_agent_status("Neutral Analyst", "in_progress")
+                    message_buffer.update_report_section(
+                        "final_trade_decision", f"### Neutral Analyst Analysis\n{neu_hist}"
+                    )
+                if judge:
+                    if message_buffer.agent_status.get("Portfolio Manager") != "completed":
                         message_buffer.update_agent_status("Portfolio Manager", "in_progress")
                         message_buffer.update_report_section(
                             "final_trade_decision", f"### Portfolio Manager Decision\n{judge}"
@@ -1791,7 +1739,7 @@ def run_analysis(
             # Update the display
             update_display(layout, message_buffer, stats_handler=stats_handler, start_time=start_time)
 
-                trace.append(chunk)
+            trace.append(chunk)
 
         # Streamed chunks are per-node deltas, not full state. Merge them
         # so every report field populated across the run is present.
@@ -1810,7 +1758,7 @@ def run_analysis(
         message_buffer.add_message("System", analyst_wall_time_tracker.format_summary())
 
         # Update final report sections
-        for section in message_buffer.report_sections:
+        for section in message_buffer.report_sections.keys():
             if section in final_state:
                 message_buffer.update_report_section(section, final_state[section])
 
@@ -1873,11 +1821,10 @@ def run_analysis(
 
 @app.command()
 def analyze(
-    checkpoint: bool | None = typer.Option(
-        None,
-        "--checkpoint/--no-checkpoint",
-        help="Enable/disable checkpoint-resume (save state after each node so a "
-        "crashed run can resume). Omit to honor TRADINGAGENTS_CHECKPOINT_ENABLED.",
+    checkpoint: bool = typer.Option(
+        False,
+        "--checkpoint",
+        help="Enable checkpoint/resume: save state after each node so a crashed run can resume.",
     ),
     clear_checkpoints: bool = typer.Option(
         False,
@@ -1964,28 +1911,36 @@ def analyze(
         from tradingagents.graph.checkpointer import clear_all_checkpoints
         n = clear_all_checkpoints(cast(str, DEFAULT_CONFIG["data_cache_dir"]))
         console.print(f"[yellow]Cleared {n} checkpoint(s).[/yellow]")
-    run_analysis(
-        checkpoint=checkpoint,
-        llm_overrides=LLMConfigOverrides(
-            provider=llm_provider,
-            quick_model=quick_model,
-            deep_model=deep_model,
-            backend_url=backend_url,
-            openai_reasoning_effort=openai_reasoning_effort,
-            google_thinking_level=google_thinking_level,
-            anthropic_effort=anthropic_effort,
-        ),
-        selection_overrides=SelectionOverrides(
-            ticker=normalize_ticker_symbol(ticker) if ticker else None,
-            analysis_date=_validate_analysis_date_option(analysis_date),
-            output_language=output_language,
-            analysts=_parse_analysts_option(analysts),
-            research_depth=_validate_research_depth(research_depth),
-            save_report=save_report,
-            save_path=save_path,
-            display_report=display_report,
-        ),
-    )
+    try:
+        run_analysis(
+            checkpoint=checkpoint,
+            llm_overrides=LLMConfigOverrides(
+                provider=llm_provider,
+                quick_model=quick_model,
+                deep_model=deep_model,
+                backend_url=backend_url,
+                openai_reasoning_effort=openai_reasoning_effort,
+                google_thinking_level=google_thinking_level,
+                anthropic_effort=anthropic_effort,
+            ),
+            selection_overrides=SelectionOverrides(
+                ticker=normalize_ticker_symbol(ticker) if ticker else None,
+                analysis_date=_validate_analysis_date_option(analysis_date),
+                output_language=output_language,
+                analysts=_parse_analysts_option(analysts),
+                research_depth=_validate_research_depth(research_depth),
+                save_report=save_report,
+                save_path=save_path,
+                display_report=display_report,
+            ),
+        )
+    except _NO_CONSOLE_ERRORS:
+        typer.echo(
+            "Error: no Windows console available. The interactive CLI needs a real "
+            "console buffer; run it from Windows Terminal, PowerShell, or cmd.exe.",
+            err=True,
+        )
+        raise typer.Exit(code=1) from None
 
 
 @app.callback(invoke_without_command=True)
