@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, cast
@@ -28,16 +27,8 @@ def _db_path(data_dir: str | Path, ticker: str) -> Path:
 
 
 def thread_id(ticker: str, date: str, signature: str = "") -> str:
-    """Deterministic thread ID for a ticker+date pair.
-
-    ``signature`` folds in graph-shape-affecting run choices so a resume under a
-    different graph can't reuse this checkpoint (#1089); omitting it keeps the
-    legacy ID.
-    """
-    base = f"{ticker.upper()}:{date}"
-    if signature:
-        base = f"{base}:{signature}"
-    return hashlib.sha256(base.encode()).hexdigest()[:16]
+    """Deterministic ID for ticker, date, and graph-shape signature."""
+    return hashlib.sha256(f"{ticker.upper()}:{date}:{signature}".encode()).hexdigest()[:16]
 
 
 @contextmanager

@@ -11,33 +11,41 @@ class ConditionalLogic:
         self.max_debate_rounds = max_debate_rounds
         self.max_risk_discuss_rounds = max_risk_discuss_rounds
 
-    def _has_tool_calls(self, state: AgentState) -> bool:
-        messages = state["messages"]
-        if not messages:
-            return False
-        return bool(getattr(messages[-1], "tool_calls", None))
-
     def should_continue_market(self, state: AgentState):
         """Determine if market analysis should continue."""
-        if self._has_tool_calls(state):
+        messages = state["messages"]
+        last_message = messages[-1] if messages else None
+        if getattr(last_message, "tool_calls", None):
             return "tools_market"
         return "Msg Clear Market"
 
     def should_continue_social(self, state: AgentState):
-        """Determine if sentiment analysis should continue."""
-        if self._has_tool_calls(state):
+        """Determine if sentiment-analyst tool round should continue.
+
+        Method name keeps the legacy ``social`` suffix to match the
+        ``AnalystType.SOCIAL = "social"`` wire value (saved-config
+        back-compat); the returned ``clear_node`` label uses the v0.2.5
+        rename so it matches the node registered by the execution plan.
+        """
+        messages = state["messages"]
+        last_message = messages[-1] if messages else None
+        if getattr(last_message, "tool_calls", None):
             return "tools_social"
         return "Msg Clear Sentiment"
 
     def should_continue_news(self, state: AgentState):
         """Determine if news analysis should continue."""
-        if self._has_tool_calls(state):
+        messages = state["messages"]
+        last_message = messages[-1] if messages else None
+        if getattr(last_message, "tool_calls", None):
             return "tools_news"
         return "Msg Clear News"
 
     def should_continue_fundamentals(self, state: AgentState):
         """Determine if fundamentals analysis should continue."""
-        if self._has_tool_calls(state):
+        messages = state["messages"]
+        last_message = messages[-1] if messages else None
+        if getattr(last_message, "tool_calls", None):
             return "tools_fundamentals"
         return "Msg Clear Fundamentals"
 
