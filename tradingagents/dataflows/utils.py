@@ -1,7 +1,6 @@
 import logging
 import re
-import pandas as pd
-from datetime import date, timedelta, datetime
+from datetime import date, datetime, timedelta
 from typing import Annotated
 
 import pandas as pd
@@ -55,6 +54,16 @@ def save_output(
 
 def get_current_date():
     return date.today().strftime("%Y-%m-%d")
+
+
+def decorate_all_methods(decorator):
+    def class_decorator(cls):
+        for attr_name, attr_value in cls.__dict__.items():
+            if callable(attr_value):
+                setattr(cls, attr_name, decorator(attr_value))
+        return cls
+
+    return class_decorator
 
 
 def get_next_weekday(value: str | datetime) -> datetime:
