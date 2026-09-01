@@ -1,8 +1,5 @@
-import os
-import logging
-import requests
-import pandas as pd
 import json
+import logging
 import os
 from datetime import datetime
 from io import StringIO
@@ -13,12 +10,13 @@ import requests
 from .errors import VendorNotConfiguredError, VendorRateLimitError
 
 API_BASE_URL = "https://www.alphavantage.co/query"
-DEFAULT_ALPHA_VANTAGE_TIMEOUT = 15
 logger = logging.getLogger(__name__)
 
 # Network timeout (seconds) so a stalled Alpha Vantage request can't hang the
 # CLI/agents indefinitely (#990).
 REQUEST_TIMEOUT = 30
+# Backward-compatible name used by the fork's callers and tests.
+DEFAULT_ALPHA_VANTAGE_TIMEOUT = REQUEST_TIMEOUT
 
 
 class AlphaVantageNotConfiguredError(VendorNotConfiguredError):
@@ -96,12 +94,12 @@ def _make_api_request(function_name: str, params: dict) -> str:
         response = requests.get(
             API_BASE_URL,
             params=api_params,
-            timeout=DEFAULT_ALPHA_VANTAGE_TIMEOUT,
+            timeout=REQUEST_TIMEOUT,
         )
         response.raise_for_status()
     except requests.Timeout as exc:
         raise AlphaVantageTemporaryError(
-            f"Alpha Vantage request timed out after {DEFAULT_ALPHA_VANTAGE_TIMEOUT}s"
+            f"Alpha Vantage request timed out after {REQUEST_TIMEOUT}s"
         ) from exc
     except requests.RequestException as exc:
         raise AlphaVantageTemporaryError(f"Alpha Vantage request failed: {exc}") from exc
