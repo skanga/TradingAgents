@@ -2,6 +2,7 @@
 
 import unittest
 import shutil
+import tempfile
 from pathlib import Path
 from typing import TypedDict
 from uuid import uuid4
@@ -171,12 +172,12 @@ class TestCheckpointSignature(unittest.TestCase):
         )
 
     def test_different_signature_starts_fresh(self):
-        global _should_crash
-        builder = _build_graph()
+        crash_state = {"should_crash": False}
+        builder = _build_graph(crash_state)
         sig1 = "analysts=market,news,fundamentals|asset=stock"
         sig2 = "analysts=market|asset=stock"       # dropped analysts -> different graph
 
-        _should_crash = True
+        crash_state["should_crash"] = True
         tid1 = thread_id(self.ticker, self.date, sig1)
         with get_checkpointer(self.tmpdir, self.ticker) as saver:
             graph = builder.compile(checkpointer=saver)
@@ -187,7 +188,7 @@ class TestCheckpointSignature(unittest.TestCase):
         # A different graph shape has no checkpoint to resume from.
         self.assertFalse(has_checkpoint(self.tmpdir, self.ticker, self.date, sig2))
 
-        _should_crash = False
+        crash_state["should_crash"] = False
         tid2 = thread_id(self.ticker, self.date, sig2)
         self.assertNotEqual(tid1, tid2)
         with get_checkpointer(self.tmpdir, self.ticker) as saver:

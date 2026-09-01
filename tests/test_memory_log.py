@@ -780,7 +780,7 @@ class TestDeferredReflection:
                 m.history.return_value = _price_df(spy_prices if sym == "SPY" else stock_prices)
                 return m
             mock_ticker_cls.side_effect = _make_ticker
-            raw, alpha, days, resolved = TradingAgentsGraph._fetch_returns(mock_graph, "NVDA", "2026-01-05")
+            raw, alpha, days, resolved = TradingAgentsGraph._fetch_returns(mock_graph, "NVDA", "2026-01-05", include_resolution=True)
         assert raw is not None and alpha is not None and days is not None
         assert isinstance(raw, float) and isinstance(alpha, float) and isinstance(days, int)
         assert days == 5
@@ -794,7 +794,7 @@ class TestDeferredReflection:
             m = MagicMock()
             m.history.return_value = _price_df([100.0])
             mock_ticker_cls.return_value = m
-            raw, alpha, days, resolved = TradingAgentsGraph._fetch_returns(mock_graph, "NVDA", "2026-04-19")
+            raw, alpha, days, resolved = TradingAgentsGraph._fetch_returns(mock_graph, "NVDA", "2026-04-19", include_resolution=True)
         assert (raw, alpha, days, resolved) == (None, None, None, None)
 
     def test_fetch_returns_stock_history_too_short(self):
@@ -840,7 +840,7 @@ class TestDeferredReflection:
             m = MagicMock()
             m.history.return_value = pd.DataFrame({"Close": []})
             mock_ticker_cls.return_value = m
-            raw, alpha, days, resolved = TradingAgentsGraph._fetch_returns(mock_graph, "XXXXXFAKE", "2026-01-10")
+            raw, alpha, days, resolved = TradingAgentsGraph._fetch_returns(mock_graph, "XXXXXFAKE", "2026-01-10", include_resolution=True)
         assert (raw, alpha, days, resolved) == (None, None, None, None)
 
     def test_fetch_returns_spy_shorter_than_stock(self):
@@ -855,7 +855,7 @@ class TestDeferredReflection:
                 m.history.return_value = _price_df(spy_prices if sym == "SPY" else stock_prices)
                 return m
             mock_ticker_cls.side_effect = _make_ticker
-            raw, alpha, days, resolved = TradingAgentsGraph._fetch_returns(mock_graph, "NVDA", "2026-01-05")
+            raw, alpha, days, resolved = TradingAgentsGraph._fetch_returns(mock_graph, "NVDA", "2026-01-05", include_resolution=True)
         assert raw is not None and alpha is not None
         assert days == 5  # full holding window used for both series
         assert resolved == "2026-01-10"
@@ -874,7 +874,7 @@ class TestDeferredReflection:
                 return m
             mock_ticker_cls.side_effect = _make_ticker
             result = TradingAgentsGraph._fetch_returns(mock_graph, "NVDA", "2026-01-05")
-        assert result == (None, None, None, None)
+        assert result == (None, None, None)
 
     # TradingAgentsGraph._resolve_benchmark — picks index for alpha calc
 

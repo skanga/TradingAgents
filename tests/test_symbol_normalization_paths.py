@@ -49,7 +49,8 @@ def test_fetch_returns_normalizes_symbol(monkeypatch):
 
     # _fetch_returns does not use ``self``; call unbound to avoid building the graph.
     raw, alpha, days, resolved = TradingAgentsGraph._fetch_returns(
-        None, "XAUUSD", "2025-01-02", holding_days=5, benchmark="SPY"
+        None, "XAUUSD", "2025-01-02", holding_days=5, benchmark="SPY",
+        include_resolution=True,
     )
 
     assert queried[0] == "GC=F"  # stock symbol normalized (#984)

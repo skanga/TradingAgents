@@ -38,6 +38,6 @@ def test_load_ohlcv_downloads_fifteen_year_cache_window(monkeypatch, tmp_path):
     assert captured == {
         "symbol": "NVDA",
         "start": "2011-05-14",
-        "end": "2026-05-14",
+        "end": "2026-05-15",
     }
     assert len(data) == 1

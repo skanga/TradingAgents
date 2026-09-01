@@ -17,8 +17,8 @@ def _state(latest_speaker, count=0):
     return {"risk_debate_state": {"latest_speaker": latest_speaker, "count": count}}
 
 
-def _debate_state(current_response, count=0):
-    return {"investment_debate_state": {"current_response": current_response, "count": count}}
+def _debate_state(last_debater, count=0):
+    return {"investment_debate_state": {"last_debater": last_debater, "count": count}}
 
 
 @pytest.mark.unit
@@ -58,15 +58,18 @@ def test_path_map_covers_full_router_range():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("current_response", [
-    "Bull", "Bull Researcher", "Bear", "Bear Researcher",
-    "",                       # drift: empty label
-    "Optimista",              # drift: i18n / translated label
-])
-def test_debate_router_return_always_routable(current_response):
+@pytest.mark.parametrize("last_debater", ["bull", "bear"])
+def test_debate_router_return_always_routable(last_debater):
     logic = ConditionalLogic(max_debate_rounds=1)
-    target = logic.should_continue_debate(_debate_state(current_response))
+    target = logic.should_continue_debate(_debate_state(last_debater))
     assert target in DEBATE_PATH_MAP
+
+
+@pytest.mark.unit
+def test_debate_router_rejects_unknown_speaker():
+    logic = ConditionalLogic(max_debate_rounds=1)
+    with pytest.raises(ValueError, match="last_debater"):
+        logic.should_continue_debate(_debate_state("drift"))
 
 
 @pytest.mark.unit
@@ -74,7 +77,7 @@ def test_debate_path_map_covers_full_router_range():
     logic = ConditionalLogic(max_debate_rounds=1)
     returns = {
         logic.should_continue_debate(_debate_state(s, c))
-        for s in ("Bull", "Bear", "drift")
+        for s in ("bull", "bear")
         for c in (0, 99)
     }
     assert returns <= set(DEBATE_PATH_MAP)

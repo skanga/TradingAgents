@@ -19,9 +19,15 @@ def _log(tmp_path):
 
 def _resolve(log, ticker, date, resolution_date, reflection):
     log.store_decision(ticker, date, f"Rating: Buy\n{reflection}")
-    log.update_with_outcome(
-        ticker, date, 0.05, 0.02, 5, reflection, resolution_date=resolution_date,
-    )
+    log.batch_update_with_outcomes([{
+        "ticker": ticker,
+        "trade_date": date,
+        "raw_return": 0.05,
+        "alpha_return": 0.02,
+        "holding_days": 5,
+        "reflection": reflection,
+        "resolution_date": resolution_date,
+    }])
 
 
 @pytest.mark.unit
@@ -29,8 +35,8 @@ def test_resolution_date_is_stored_and_parsed(tmp_path):
     log = _log(tmp_path)
     _resolve(log, "NVDA", "2026-01-05", "2026-01-10", "outcome known 01-10")
     entry = log.load_entries()[0]
-    assert entry["resolved"] == "2026-01-10"
-    assert "resolved:2026-01-10" in (tmp_path / "mem.md").read_text()
+    assert entry["resolution_date"] == "2026-01-10"
+    assert '"resolution_date":"2026-01-10"' in (tmp_path / "mem.md").read_text()
 
 
 @pytest.mark.unit
@@ -59,9 +65,16 @@ def test_legacy_entry_without_resolution_date_excluded_in_backtest(tmp_path):
     log = _log(tmp_path)
     # Simulate a pre-migration resolved entry: no resolution_date recorded.
     log.store_decision("NVDA", "2026-01-05", "Rating: Buy\nlegacy lesson")
-    log.update_with_outcome("NVDA", "2026-01-05", 0.05, 0.02, 5, "legacy lesson")
+    log.batch_update_with_outcomes([{
+        "ticker": "NVDA",
+        "trade_date": "2026-01-05",
+        "raw_return": 0.05,
+        "alpha_return": 0.02,
+        "holding_days": 5,
+        "reflection": "legacy lesson",
+    }])
     entry = log.load_entries()[0]
-    assert entry["resolved"] is None
+    assert entry["resolution_date"] is None
 
     # Conservative: excluded from a point-in-time query (can't prove it was known)...
     assert log.get_past_context("NVDA", as_of="2026-06-01") == ""

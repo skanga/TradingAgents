@@ -49,7 +49,7 @@ def test_route_to_vendor_falls_back_after_generic_transient_error(monkeypatch):
             "alpha_vantage": fallback,
         },
     )
-    token = use_config({"data_vendors": {"core_stock_apis": "yfinance"}})
+    token = use_config({"data_vendors": {"core_stock_apis": "yfinance,alpha_vantage"}})
     try:
         assert route_to_vendor("get_stock_data", "NVDA", "2026-01-01", "2026-01-10") == "fallback result"
         assert calls == ["primary", "fallback"]
@@ -76,7 +76,7 @@ def test_route_to_vendor_falls_back_after_connection_error(monkeypatch):
             "alpha_vantage": fallback,
         },
     )
-    token = use_config({"data_vendors": {"core_stock_apis": "yfinance"}})
+    token = use_config({"data_vendors": {"core_stock_apis": "yfinance,alpha_vantage"}})
     try:
         assert route_to_vendor("get_stock_data", "NVDA", "2026-01-01", "2026-01-10") == "fallback result"
         assert calls == ["primary", "fallback"]
@@ -112,7 +112,7 @@ def test_route_to_vendor_does_not_fallback_after_permanent_http_error(monkeypatc
             "alpha_vantage": fallback,
         },
     )
-    token = use_config({"data_vendors": {"core_stock_apis": "yfinance"}})
+    token = use_config({"data_vendors": {"core_stock_apis": "yfinance,alpha_vantage"}})
     try:
         with pytest.raises(requests.HTTPError) as exc_info:
             route_to_vendor("get_stock_data", "NVDA", "2026-01-01", "2026-01-10")
@@ -142,7 +142,7 @@ def test_route_to_vendor_falls_back_after_transient_http_error(monkeypatch, stat
             "alpha_vantage": fallback,
         },
     )
-    token = use_config({"data_vendors": {"core_stock_apis": "yfinance"}})
+    token = use_config({"data_vendors": {"core_stock_apis": "yfinance,alpha_vantage"}})
     try:
         assert route_to_vendor("get_stock_data", "NVDA", "2026-01-01", "2026-01-10") == "fallback result"
         assert calls == ["primary", "fallback"]
@@ -169,7 +169,7 @@ def test_route_to_vendor_falls_back_after_yfinance_rate_limit(monkeypatch):
             "alpha_vantage": fallback,
         },
     )
-    token = use_config({"data_vendors": {"core_stock_apis": "yfinance"}})
+    token = use_config({"data_vendors": {"core_stock_apis": "yfinance,alpha_vantage"}})
     try:
         assert route_to_vendor("get_stock_data", "NVDA", "2026-01-01", "2026-01-10") == "fallback result"
         assert calls == ["primary", "fallback"]

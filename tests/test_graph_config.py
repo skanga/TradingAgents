@@ -151,14 +151,17 @@ def test_graph_propagate_passes_run_exception_to_checkpointer_exit():
             self.exit_args = (exc_type, exc, traceback)
             return False
 
-    graph = MagicMock()
+    graph = object.__new__(TradingAgentsGraph)
     graph.config = {
         "checkpoint_enabled": True,
         "data_cache_dir": "cache-dir",
+        "max_debate_rounds": 1,
+        "max_risk_discuss_rounds": 1,
     }
+    graph.selected_analysts = ["market"]
     graph._checkpointer_ctx = None
+    graph.workflow = MagicMock()
     graph.workflow.compile.side_effect = ["compiled-with-checkpointer", "compiled-clean"]
-    graph._run_graph.side_effect = RuntimeError("graph failed")
     checkpointer = RecordingCheckpointer()
 
     with (
@@ -166,7 +169,8 @@ def test_graph_propagate_passes_run_exception_to_checkpointer_exit():
         patch("tradingagents.graph.trading_graph.checkpoint_step", return_value=None),
         pytest.raises(RuntimeError, match="graph failed"),
     ):
-        TradingAgentsGraph.propagate(graph, "NVDA", "2026-01-10")
+        with graph.checkpoint_scope("NVDA", "2026-01-10"):
+            raise RuntimeError("graph failed")
 
     assert checkpointer.exit_args[0] is RuntimeError
     assert str(checkpointer.exit_args[1]) == "graph failed"
