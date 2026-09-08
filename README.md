@@ -1,12 +1,46 @@
 # TradingAgents: Multi-Agents LLM Financial Trading Framework
 
-## Fork Status
+We created this fork to build a **complete analyst application and portfolio
+workflow around upstream's multi-agent analysis engine**. It brings running
+analyses, reviewing evidence, tracking holdings, and planning portfolio changes
+into one research workspace, built on
+[TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents).
 
-This project is an independent fork of `TauricResearch/TradingAgents` with selective upstream sync.
+## What this fork adds
 
-The fork keeps the original multi-agent trading analysis foundation, but its direction is now independent. Development focuses on this repository's own report workflow, analyst experience, provider support, documentation, and operational needs.
+Compared with the upstream revision merged into this repository (`be952b8`), the
+main additions are:
 
-Selective upstream sync means upstream bug fixes, security fixes, and useful infrastructure improvements may be pulled in when they fit this fork. This project does not aim to mirror upstream feature direction or preserve strict drop-in compatibility.
+| Addition | What it enables |
+| --- | --- |
+| **Browser application** | Run and cancel analyses, follow live progress, browse history, and configure settings through a Next.js/FastAPI application. A legacy Streamlit GUI is also included. |
+| **Batch analysis** | Analyze multiple tickers from a list or portfolio CSV/JSON, include holdings information, and produce consolidated summaries and machine-readable results. |
+| **Portfolio allocation planning** | Turn analysis ratings into target weights and whole-share buy/sell proposals, with available-cash, position-size, and minimum-cash constraints. |
+| **Richer reports** | Export HTML/PDF reports, read plain-English briefs, compare benchmark charts, and chat about a completed analysis. |
+| **Research workspace** | Keep searchable notes linked to tickers or runs, inspect archived debate transcripts and tool-call traces, and browse decision memory. |
+| **Portfolio monitoring** | Track positions and valuations, maintain watchlists, follow price/news updates, and view an earnings/dividend calendar. |
+| **Scenario simulation** | Save simple portfolio projections based on historical returns and volatility, with an SPY comparison. |
+| **Financial-planner integration** | Import account holdings from a separate planner service and preview proposed position updates. |
+| **Automation and deployment** | Use expanded noninteractive CLI options, web/API Docker services, Windows launchers, and Synology deployment and maintenance scripts. |
+
+Allocation plans are research proposals and do not submit broker orders. Scenario
+simulation provides projections, not a historical strategy backtester.
+
+Structured agent outputs, checkpoint/resume, persistent decision memory, broad
+LLM-provider support, Ollama/custom endpoints, and basic Docker support are
+**shared upstream capabilities**, not exclusive fork features. This fork keeps
+compatibility extensions where its application workflows or saved data need them.
+
+## Fork status and upstream relationship
+
+This project is an independent fork with selective upstream sync. We retain the
+original multi-agent analysis foundation while developing the analyst application,
+portfolio workflows, reporting, and operational tooling described above.
+
+Upstream bug fixes, security fixes, and useful infrastructure improvements may be
+merged when they fit this fork. We preserve fork-specific workflows and saved-data
+compatibility during those merges; we do not aim to mirror every upstream feature
+or maintain strict drop-in compatibility.
 
 A detailed explainer on [how it works](TICKER_REPORT_ANALYST_GUIDE.md) is available.
 
@@ -392,6 +426,12 @@ TradingAgents persists two kinds of state across runs.
 The decision log is always on. Each completed run appends its decision to `~/.tradingagents/memory/trading_memory.md`. On the next run for the same ticker, TradingAgents fetches the realised return (raw and alpha vs SPY), generates a one-paragraph reflection, and injects the most recent same-ticker decisions plus recent cross-ticker lessons into the Portfolio Manager prompt, so each analysis carries forward what worked and what didn't.
 
 Override the path with `TRADINGAGENTS_MEMORY_LOG_PATH`.
+
+The fork writes versioned JSONL records despite the historical `.md` filename.
+It can also read legacy Markdown logs, including upstream `resolved:` dates;
+the next write converts those records to JSONL. Historical analyses only use
+lessons whose outcomes were known by the analysis date. An upstream version
+that only reads Markdown cannot directly read a log after this conversion.
 
 ### Checkpoint resume
 

@@ -17,6 +17,32 @@ def _log(tmp_path):
     return TradingMemoryLog({"memory_log_path": str(tmp_path / "mem.md")})
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize("separator", [" | ", "|"])
+def test_upstream_resolution_date_survives_import_and_jsonl_rewrite(tmp_path, separator):
+    path = tmp_path / "mem.md"
+    tag = separator.join([
+        "2026-01-05", "NVDA", "Buy", "+5.0%", "+2.0%", "5d",
+        "resolved:2026-01-10",
+    ])
+    path.write_text(
+        f"[{tag}]\n\nDECISION:\nRating: Buy\n\nREFLECTION:\nupstream lesson"
+        + TradingMemoryLog._SEPARATOR,
+        encoding="utf-8",
+    )
+    log = _log(tmp_path)
+    assert log.load_entries()[0]["resolution_date"] == "2026-01-10"
+    assert log.get_past_context("NVDA", as_of="2026-01-09") == ""
+    assert "upstream lesson" in log.get_past_context("NVDA", as_of="2026-01-10")
+
+    # A subsequent decision rewrites the imported log in the fork's JSONL format.
+    log.store_decision("AAPL", "2026-02-01", "Rating: Hold")
+    reloaded = _log(tmp_path)
+    assert reloaded.load_entries()[0]["resolution_date"] == "2026-01-10"
+    assert reloaded.get_past_context("NVDA", as_of="2026-01-09") == ""
+    assert "upstream lesson" in reloaded.get_past_context("NVDA", as_of="2026-01-10")
+
+
 def _resolve(log, ticker, date, resolution_date, reflection):
     log.store_decision(ticker, date, f"Rating: Buy\n{reflection}")
     log.batch_update_with_outcomes([{

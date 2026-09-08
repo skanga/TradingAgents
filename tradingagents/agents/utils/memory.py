@@ -334,7 +334,7 @@ class TradingMemoryLog:
             "raw": fields["raw"],
             "alpha": fields["alpha"],
             "holding": fields["holding"],
-            "resolution_date": None,
+            "resolution_date": fields.get("resolution_date"),
         }
         body = "\n".join(lines[1:]).strip()
         decision_match = self._DECISION_RE.search(body)
@@ -347,7 +347,10 @@ class TradingMemoryLog:
         if not (tag_line.startswith("[") and tag_line.endswith("]")):
             return None
 
-        parts = [part.strip() for part in tag_line[1:-1].split(" | ")]
+        # Fork logs can contain literal pipes in tickers; prefer their spaced
+        # delimiter while also accepting upstream's compact tag syntax.
+        delimiter = " | " if " | " in tag_line else "|"
+        parts = [part.strip() for part in tag_line[1:-1].split(delimiter)]
         if len(parts) == 4 and parts[3] == "pending":
             return {
                 "date": parts[0],
@@ -359,6 +362,11 @@ class TradingMemoryLog:
                 "holding": None,
             }
         if len(parts) >= 6:
+            # Preserve upstream's point-in-time marker when migrating to JSONL.
+            resolution_date = None
+            for part in parts[6:]:
+                if part.startswith("resolved:"):
+                    resolution_date = part[len("resolved:"):].strip()
             return {
                 "date": parts[0],
                 "ticker": parts[1],
@@ -367,6 +375,7 @@ class TradingMemoryLog:
                 "raw": parts[3],
                 "alpha": parts[4],
                 "holding": parts[5],
+                "resolution_date": resolution_date,
             }
         return None
 
