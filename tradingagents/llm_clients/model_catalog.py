@@ -61,6 +61,23 @@ _QWEN_MODELS: dict[str, list[ModelOption]] = {
 # Shared model list for MiniMax's global and CN endpoints (same IDs).
 # Full official lineup per platform.minimax.io/docs/api-reference/text-openai-api.
 # M3 carries a 1M-token context window; the M2.x line is 204,800 tokens.
+# Kimi (Moonshot). Source: platform.kimi.ai/docs/models. "Custom model ID" stays
+# available for models newer than this list. The k2.7-code variants are omitted:
+# they are coding specialists, not analysis models.
+_KIMI_MODELS: dict[str, list[ModelOption]] = {
+    "quick": [
+        ("Kimi K2.6 - 256K ctx, thinking modes, agent tasks", "kimi-k2.6"),
+        ("Kimi K3 - Flagship, 1M ctx", "kimi-k3"),
+        ("Custom model ID", "custom"),
+    ],
+    "deep": [
+        ("Kimi K3 - Flagship, 1M ctx, native visual understanding", "kimi-k3"),
+        ("Kimi K2.6 - 256K ctx, thinking modes, agent tasks", "kimi-k2.6"),
+        ("Custom model ID", "custom"),
+    ],
+}
+
+
 _MINIMAX_MODELS: dict[str, list[ModelOption]] = {
     "quick": [
         ("MiniMax-M3 - Latest, 1M ctx, native multimodal", "MiniMax-M3"),
@@ -151,6 +168,7 @@ MODEL_OPTIONS: ProviderModeOptions = {
     "glm-cn": _GLM_MODELS,
     # MiniMax: same model IDs across global (.io) and China (.com) regions,
     # so the two provider keys share one model list.
+    "kimi": _KIMI_MODELS,
     "minimax": _MINIMAX_MODELS,
     "minimax-cn": _MINIMAX_MODELS,
     # OpenRouter: fetched dynamically. Azure: any deployed model name.
@@ -183,7 +201,6 @@ MODEL_OPTIONS: ProviderModeOptions = {
     # stale. The endpoint + key are wired by the provider; the user picks the
     # model their account has access to.
     "mistral": _CUSTOM_ONLY,
-    "kimi": _CUSTOM_ONLY,
     "groq": _CUSTOM_ONLY,
     "nvidia": _CUSTOM_ONLY,
     # Bedrock model IDs / cross-region inference profile IDs are user-specified.

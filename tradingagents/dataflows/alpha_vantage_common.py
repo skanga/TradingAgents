@@ -146,24 +146,18 @@ def _filter_csv_by_date_range(csv_data: str, start_date: str, end_date: str) -> 
     if not csv_data or csv_data.strip() == "":
         return csv_data
 
-    try:
-        # Parse CSV data
-        df = pd.read_csv(StringIO(csv_data))
+    # Deliberately unguarded: TIME_SERIES_DAILY_ADJUSTED returns the full series
+    # up to today, so this trim is the only thing keeping bars after end_date out
+    # of a historical run. Swallowing a parse failure would serve the untrimmed
+    # body, and with it future prices.
+    df = pd.read_csv(StringIO(csv_data))
 
-        # Assume the first column is the date column (timestamp)
-        date_col = df.columns[0]
-        df[date_col] = pd.to_datetime(df[date_col])
+    # Assume the first column is the date column (timestamp)
+    date_col = df.columns[0]
+    df[date_col] = pd.to_datetime(df[date_col])
 
-        # Filter by date range
-        start_dt = pd.to_datetime(start_date)
-        end_dt = pd.to_datetime(end_date)
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+    filtered_df = df[(df[date_col] >= start_dt) & (df[date_col] <= end_dt)]
 
-        filtered_df = df[(df[date_col] >= start_dt) & (df[date_col] <= end_dt)]
-
-        # Convert back to CSV string
-        return filtered_df.to_csv(index=False)
-
-    except Exception as e:
-        # If filtering fails, return original data with a warning
-        logger.warning("Failed to filter CSV data by date range: %s", e)
-        return csv_data
+    return filtered_df.to_csv(index=False)

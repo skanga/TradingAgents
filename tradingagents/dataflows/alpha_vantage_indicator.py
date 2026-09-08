@@ -2,7 +2,6 @@ import logging
 
 from .alpha_vantage_common import AlphaVantageNotConfiguredError, _make_api_request
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -216,9 +215,5 @@ def get_indicator(
         # successful-looking error string.
         raise
     except Exception as e:
-        logger.warning(
-            "Error getting Alpha Vantage indicator data for %s: %s",
-            indicator,
-            e,
-        )
+        logger.warning("Alpha Vantage indicator %s failed: %s", indicator, e)
         return f"Error retrieving {indicator} data: {str(e)}"

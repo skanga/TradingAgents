@@ -18,6 +18,7 @@ so that:
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import Literal
 
@@ -31,9 +32,29 @@ _NULLISH_FLOAT = {"", "none", "n/a", "na", "null", "nil", "-", "tbd", "unknown"}
 
 
 def _coerce_optional_float(value):
-    if isinstance(value, str) and value.strip().lower() in _NULLISH_FLOAT:
+    """Normalise an LLM-written optional numeric field before validation.
+
+    Three shapes show up in practice: a placeholder string ("None", "N/A") in
+    place of an omitted value (#1058); a percentage where a price was asked for
+    ("15%", #1288); and a human-formatted price ("$1,234.50"). A percentage
+    cannot be salvaged into an absolute level -- reading "15%" as 15 would put a
+    stop at $15 on a $600 stock -- so it is dropped like a placeholder, leaving
+    one bad field to null out instead of failing the whole proposal. Commas are
+    removed only from valid thousands groups: decimal-comma or malformed prices
+    are dropped rather than silently changing their magnitude. Anything else
+    passes through to pydantic.
+    """
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if text.lower() in _NULLISH_FLOAT or text.endswith("%"):
         return None
-    return value
+    cleaned = text.lstrip("$€£¥").strip()
+    if "," in cleaned:
+        if not re.fullmatch(r"[+-]?[1-9][0-9]{0,2}(?:,[0-9]{3})+(?:\.[0-9]+)?", cleaned):
+            return None
+        cleaned = cleaned.replace(",", "")
+    return cleaned or None
 
 
 # ---------------------------------------------------------------------------
@@ -140,11 +161,19 @@ class TraderProposal(BaseModel):
     )
     entry_price: float | None = Field(
         default=None,
-        description="Optional entry price target in the instrument's quote currency.",
+        description=(
+            "Optional entry price target as an absolute number in the instrument's "
+            "quote currency (e.g. 189.5), never a percentage or a range. Omit it "
+            "if you cannot state a specific level."
+        ),
     )
     stop_loss: float | None = Field(
         default=None,
-        description="Optional stop-loss price in the instrument's quote currency.",
+        description=(
+            "Optional stop-loss as an absolute price in the instrument's quote "
+            "currency (e.g. 172.0), never a percentage. Convert a percentage "
+            "distance to the price level it implies, or omit it."
+        ),
     )
     position_sizing: str | None = Field(
         default=None,

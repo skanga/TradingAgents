@@ -42,7 +42,7 @@ def test_get_stock_stats_indicators_window_logs_bulk_fallback(monkeypatch, caplo
     )
 
     assert "2026-01-06: 42" in result
-    assert "Error getting bulk stockstats data" in caplog.text
+    assert "Bulk stockstats fetch failed, falling back per-day" in caplog.text
     assert "bulk failed" in caplog.text
 
 
@@ -56,7 +56,7 @@ def test_get_stockstats_indicator_logs_failure(monkeypatch, caplog):
     result = y_finance.get_stockstats_indicator("NVDA", "rsi", "2026-01-06")
 
     assert result == ""
-    assert "Error getting stockstats indicator data" in caplog.text
+    assert "Stockstats indicator rsi failed on 2026-01-06" in caplog.text
     assert "stats failed" in caplog.text
 
 

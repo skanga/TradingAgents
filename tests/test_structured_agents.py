@@ -115,6 +115,95 @@ class TestNullishFloatCoercion:
         )
         assert d.price_target is None
 
+    def test_percentage_answer_to_a_price_field_becomes_none(self):
+        # The Trader is asked for concrete levels and may answer a price field
+        # with a distance ("15%"), which failed the whole proposal (#1288).
+        # A percentage cannot be salvaged: 15% must not become a $15 stop.
+        for pct in ("15%", " 7.5% ", "-10%"):
+            p = TraderProposal(
+                action=TraderAction.BUY,
+                reasoning="x",
+                entry_price=pct,
+                stop_loss=pct,
+            )
+            assert p.entry_price is None
+            assert p.stop_loss is None
+
+    def test_human_formatted_price_is_reduced_to_its_number(self):
+        p = TraderProposal(
+            action=TraderAction.BUY,
+            reasoning="x",
+            entry_price="$1,234.50",
+            stop_loss="1,180",
+        )
+        assert p.entry_price == 1234.50
+        assert p.stop_loss == 1180.0
+
+    def test_one_bad_field_no_longer_fails_the_whole_proposal(self):
+        # Previously a single '15%' raised, forcing a free-text retry that lost
+        # the action and reasoning; now the rest of the proposal survives.
+        p = TraderProposal(
+            action=TraderAction.SELL,
+            reasoning="downgrade on margin compression",
+            entry_price="612.40",
+            stop_loss="15%",
+        )
+        assert p.action is TraderAction.SELL
+        assert p.entry_price == 612.40
+        assert p.stop_loss is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("field", ["entry_price", "stop_loss", "price_target"])
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("189,50", None),
+        ("  €189,50 ", None),
+        ("1.234,50", None),
+        ("12,34.50", None),
+        ("1,234,56", None),
+        (",189", None),
+        ("189,", None),
+        ("1,,234", None),
+        ("0,125", None),
+        ("$1,234.50", 1234.5),
+        ("£1,234,567.89", 1234567.89),
+        ("+1,234.50", 1234.5),
+        ("-1,234.50", -1234.5),
+        ("1,180", 1180.0),
+        ("  ¥1,234 ", 1234.0),
+    ],
+)
+def test_optional_prices_only_strip_valid_thousands_grouping(field, raw, expected):
+    if field == "price_target":
+        result = PortfolioDecision(
+            rating=PortfolioRating.HOLD,
+            executive_summary="s",
+            investment_thesis="t",
+            price_target=raw,
+        )
+    else:
+        result = TraderProposal(action=TraderAction.HOLD, reasoning="x", **{field: raw})
+    assert getattr(result, field) == expected
+
+
+@pytest.mark.unit
+def test_decimal_comma_prices_do_not_produce_an_inflated_buy_proposal():
+    proposal = TraderProposal(
+        action=TraderAction.BUY,
+        reasoning="Buy only at a verified price.",
+        entry_price="189,50",
+        stop_loss="172,00",
+    )
+    assert proposal.action is TraderAction.BUY
+    assert proposal.reasoning == "Buy only at a verified price."
+    assert proposal.entry_price is None
+    assert proposal.stop_loss is None
+    rendered = render_trader_proposal(proposal)
+    assert "Entry Price" not in rendered
+    assert "Stop Loss" not in rendered
+
 
 @pytest.mark.unit
 class TestRenderResearchPlan:
@@ -404,6 +493,21 @@ def _structured_sentiment_llm(captured: dict, report: SentimentReport | None = N
 
 @pytest.mark.unit
 class TestSentimentAnalystAgent:
+    @pytest.fixture(autouse=True)
+    def _stub_prefetched_sources(self, monkeypatch):
+        """Stub the sources the analyst pre-fetches before prompting.
+
+        create_sentiment_analyst fetches news, StockTwits and Reddit itself, so
+        without this these tests hit the live network. A real Reddit 429 then
+        backs the fetcher off for a minute per subreddit, which is what turned
+        this file into a multi-minute hang.
+        """
+        from tradingagents.agents.analysts import sentiment_analyst as sentiment
+
+        monkeypatch.setattr(sentiment, "fetch_stocktwits_messages", lambda *a, **k: "st")
+        monkeypatch.setattr(sentiment, "fetch_reddit_posts", lambda *a, **k: "rd")
+        monkeypatch.setattr(sentiment.get_news, "func", lambda *a, **k: "news", raising=False)
+
     def test_structured_path_produces_rendered_markdown(self):
         captured = {}
         report = SentimentReport(

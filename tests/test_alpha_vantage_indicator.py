@@ -11,4 +11,4 @@ def test_alpha_vantage_indicator_failure_logs_warning(monkeypatch, caplog):
     result = alpha_vantage_indicator.get_indicator("NVDA", "rsi", "2026-01-10", 3)
 
     assert result == "Error retrieving rsi data: api failed"
-    assert "Error getting Alpha Vantage indicator data for rsi" in caplog.text
+    assert "Alpha Vantage indicator rsi failed" in caplog.text

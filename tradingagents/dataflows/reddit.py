@@ -10,6 +10,10 @@ off once (honouring ``Retry-After``). RSS lacks score / comment counts, so those
 posts are marked and the formatter omits the metrics rather than printing fake
 zeros.
 
+A fetch that fails is reported as ``<unavailable>``, never as "no posts found":
+the two are different claims, and passing a rate-limited fetch off as silence
+hands the sentiment analyst a signal that was never observed (#1295).
+
 No API key required. Returns formatted plaintext blocks ready for prompt
 injection and degrades gracefully — returns a placeholder string rather than
 raising, so callers never special-case missing data.
@@ -102,9 +106,12 @@ def _strip_html(content: str) -> str:
     return " ".join(html.unescape(text).split())
 
 
-# Headerless-429 backoff when Reddit gives no Retry-After. Jittered so several
-# analyses sharing an IP don't retry in lockstep and re-collide on the limit.
-_RETRY_FALLBACK_SECONDS = 5.0
+# Headerless-429 backoff when Reddit gives no Retry-After. Measured against
+# /r/{sub}/search.rss, a retry still 429s at 8s, 10s and 30s of spacing and
+# succeeds at 60s, so a shorter wait spends the one retry on a request that
+# cannot succeed (#1295). Jittered so several analyses sharing an IP don't
+# retry in lockstep and re-collide on the limit.
+_RETRY_FALLBACK_SECONDS = 60.0
 
 
 def _jitter(seconds: float, frac: float = 0.2) -> float:
@@ -114,14 +121,18 @@ def _jitter(seconds: float, frac: float = 0.2) -> float:
 
 
 def _retry_after_seconds(exc: HTTPError) -> float | None:
-    """Seconds to wait from a 429's ``Retry-After`` header, capped at 30s.
+    """Seconds to wait from a 429's ``Retry-After`` header, capped at 60s.
+
+    The cap matches ``_RETRY_FALLBACK_SECONDS``: honouring less than we would
+    wait on our own would spend the one retry on a request we already know is
+    too early.
 
     Returns ``None`` only when the header is absent or unparseable; a valid
     ``Retry-After: 0`` returns ``0.0`` (retry at once), not ``None``.
     """
     try:
         val = exc.headers.get("Retry-After") if getattr(exc, "headers", None) else None
-        return min(float(val), 30.0) if val is not None else None
+        return min(float(val), 60.0) if val is not None else None
     except (ValueError, TypeError, AttributeError):
         return None
 
@@ -149,13 +160,18 @@ def _fetch_subreddit_rss(
     limit: int,
     timeout: float,
     _retry: bool = True,
-) -> list[dict]:
+) -> list[dict] | None:
     """Default path: parse the public Atom search feed for a subreddit.
 
     Carries no score / comment counts, so those fields are left None and the
     post is tagged ``source="rss"`` for honest display. On a 429 (Reddit's
     per-IP rate limit) we back off once — honouring ``Retry-After`` when
     present — before giving up, so a transient burst doesn't blank the feed.
+
+    Returns ``[]`` when the search ran and matched nothing, and ``None`` when
+    the fetch itself failed. The caller must keep these apart: rendering a
+    failed fetch as "no posts found" hands the sentiment analyst an absence of
+    discussion that was never observed (#1295).
     """
     url = _RSS.format(sub=sub, qs=_search_qs(ticker, limit))
     req = Request(url, headers={"User-Agent": _UA})
@@ -175,12 +191,12 @@ def _fetch_subreddit_rss(
             time.sleep(wait)
             return _fetch_subreddit_rss(ticker, sub, limit, timeout, _retry=False)
         logger.warning("Reddit RSS fetch failed for r/%s · %s: %s", sub, ticker, exc)
-        return []
+        return None
     except (OSError, http.client.HTTPException, ET.ParseError) as exc:
         # OSError covers URLError/TimeoutError/connection resets; HTTPException
         # covers chunked-transfer errors (IncompleteRead/BadStatusLine, #1024).
         logger.warning("Reddit RSS fetch failed for r/%s · %s: %s", sub, ticker, exc)
-        return []
+        return None
 
     posts = []
     for entry in root.findall("atom:entry", _ATOM_NS)[:limit]:
@@ -234,14 +250,15 @@ def _fetch_subreddit(
     sub: str,
     limit: int,
     timeout: float,
-) -> list[dict]:
-    """Fetch one subreddit, RSS-first.
+    _retry: bool = True,
+) -> list[dict] | None:
+    """Fetch one subreddit, RSS-first. ``None`` means the fetch failed.
 
     The JSON search endpoint is reliably WAF-blocked (403) for public clients,
     so we go straight to the RSS feed — which serves our identified User-Agent
     reliably — halving our request volume against Reddit's per-IP rate limit.
     """
-    return _fetch_subreddit_rss(ticker, sub, limit, timeout)
+    return _fetch_subreddit_rss(ticker, sub, limit, timeout, _retry=_retry)
 
 
 def fetch_reddit_posts(
@@ -267,13 +284,26 @@ def fetch_reddit_posts(
     # Crypto reaches us as a Yahoo pair (BTC-USD); search Reddit for the base
     # ("BTC") so the query actually matches discussion instead of near-nothing.
     ticker = crypto_base(ticker) or ticker
+    subreddits = list(subreddits)
     blocks = []
     total_posts = 0
+    unavailable = []
+    allow_retry = True
     for i, sub in enumerate(subreddits):
         if i > 0 and inter_request_delay:
             time.sleep(_jitter(inter_request_delay))
-        posts = _within_window(_fetch_subreddit(ticker, sub, limit_per_sub, timeout),
-                               start_date, end_date)
+        fetched = _fetch_subreddit(ticker, sub, limit_per_sub, timeout, _retry=allow_retry)
+        if fetched is None:
+            # A failed fetch is not an absence of discussion, so it must not be
+            # rendered as "no posts found" (#1295). One failure also means the
+            # per-IP budget is likely gone, so skip the (now 60s) back-off on
+            # the remaining subreddits rather than stalling the run on retries
+            # that cannot succeed; #1286 tracks coordinating this properly.
+            allow_retry = False
+            unavailable.append(sub)
+            blocks.append(f"r/{sub}: <unavailable: fetch failed, not an absence of posts>")
+            continue
+        posts = _within_window(fetched, start_date, end_date)
         total_posts += len(posts)
         if not posts:
             blocks.append(f"r/{sub}: <no posts found mentioning {ticker.upper()} in the past 7 days>")
@@ -306,8 +336,23 @@ def fetch_reddit_posts(
         blocks.append("\n".join(lines))
 
     if total_posts == 0:
-        return (
+        searched = [s for s in subreddits if s not in unavailable]
+        if not searched:
+            # Every source failed: claiming "no posts" here would assert a
+            # silence we never observed.
+            return (
+                f"<Reddit unavailable: every source failed to fetch "
+                f"({', '.join(f'r/{s}' for s in unavailable)}); this is not an "
+                f"absence of discussion>"
+            )
+        summary = (
             f"<no Reddit posts found mentioning {ticker.upper()} across "
-            f"{', '.join(f'r/{s}' for s in subreddits)} in the past 7 days>"
+            f"{', '.join(f'r/{s}' for s in searched)} in the past 7 days>"
         )
+        if unavailable:
+            summary += (
+                f"\n<unavailable (fetch failed): "
+                f"{', '.join(f'r/{s}' for s in unavailable)}>"
+            )
+        return summary
     return "\n\n".join(blocks)

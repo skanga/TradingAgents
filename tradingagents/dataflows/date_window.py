@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from .utils import get_current_date
+
 
 def to_utc(dt: datetime) -> datetime:
     """Normalize a datetime to UTC-aware; a naive value is assumed to be UTC."""
@@ -28,3 +30,32 @@ def in_window(pub_dt: datetime | None, start_dt: datetime, end_dt: datetime) -> 
     if pub_dt is not None:
         return to_utc(start_dt) <= to_utc(pub_dt) < end + timedelta(days=1)
     return end >= datetime.now(timezone.utc) - timedelta(days=1)
+
+
+def withhold_live_profile(curr_date: str | None, label: str) -> str | None:
+    """Notice to serve instead of a live-only company profile, or None to serve it.
+
+    Vendor "company overview" endpoints (yfinance ``Ticker.info``, Alpha Vantage
+    ``OVERVIEW``) carry no historical vintage — not even name, sector and
+    industry, which move when a company renames or is reclassified — so serving
+    one into a run dated in the past leaks post-decision information (#1300).
+    Every fundamentals vendor withholds on this rule, so switching between them
+    cannot reintroduce the leak.
+    """
+    if not curr_date:
+        return None
+    today = get_current_date()
+    if curr_date >= today:
+        return None
+    return (
+        f"# Company Fundamentals for {label}\n"
+        f"# Point-in-time as of: {curr_date}\n\n"
+        f"Profile fundamentals are withheld for this date. This vendor serves "
+        f"only present-day values ({today}) with no historical vintage: market "
+        f"cap, valuation multiples, the 52-week range and TTM income move with "
+        f"today's quote, and even the name, sector and industry reflect today "
+        f"rather than {curr_date} (companies rename and get reclassified). "
+        f"Serving them would put post-decision information into a {curr_date} "
+        f"analysis. Point-in-time fundamentals for {curr_date} are available "
+        f"from the balance sheet, income statement, and cash flow tools."
+    )
