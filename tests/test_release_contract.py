@@ -15,6 +15,7 @@ except ModuleNotFoundError:
 def test_release_metadata_and_ci_dependencies():
     project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
     assert project["version"] == "0.5.0"
+    assert any(dep.startswith("streamlit") for dep in project["optional-dependencies"]["service"])
     assert "## [0.5.0]" in Path("CHANGELOG.md").read_text(encoding="utf-8")
     assert any(dep.startswith("tomli") and "3.11" in dep for dep in project["optional-dependencies"]["dev"])
     assert 'pip install -e ".[dev,service]"' in Path(".github/workflows/ci.yml").read_text(encoding="utf-8")

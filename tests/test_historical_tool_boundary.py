@@ -91,9 +91,22 @@ def test_historical_identity_does_not_fetch_current_company_profile(monkeypatch)
     request.assert_not_called()
 
 
+@pytest.mark.parametrize("through_tool", [False, True])
+def test_unscoped_default_state_preserves_direct_call_semantics(monkeypatch, through_tool):
+    route = Mock(return_value="direct data")
+    monkeypatch.setattr(fundamental_data_tools, "route_to_vendor", route)
+    tool = fundamental_data_tools.get_balance_sheet
+    result = tool.invoke({"ticker": "AAPL"}) if through_tool else tool.func("AAPL")
+    assert result == "direct data"
+    route.assert_called_once_with("get_balance_sheet", "AAPL", "quarterly", None)
+
+
 def test_tool_state_is_hidden_from_model_schema():
     for module, name in [
         (fundamental_data_tools, "get_balance_sheet"), (news_data_tools, "get_news"),
+        (fundamental_data_tools, "get_fundamentals"), (fundamental_data_tools, "get_cashflow"),
+        (fundamental_data_tools, "get_income_statement"), (news_data_tools, "get_global_news"),
+        (news_data_tools, "get_insider_transactions"),
         (core_stock_tools, "get_stock_data"), (technical_indicators_tools, "get_indicators"),
         (macro_data_tools, "get_macro_indicators"), (market_data_validation_tools, "get_verified_market_snapshot"),
         (prediction_markets_tools, "get_prediction_markets"),

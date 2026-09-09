@@ -820,6 +820,9 @@ def get_user_selections(
     anthropic_effort = resolved_llm.anthropic_effort if resolved_llm else None
 
     provider_lower = selected_llm_provider.lower()
+    if (provider_lower == "openai" and resolved_llm is None
+            and os.environ.get("TRADINGAGENTS_OPENAI_REASONING_EFFORT")):
+        reasoning_effort = cast(str | None, DEFAULT_CONFIG.get("openai_reasoning_effort"))
     if provider_lower == "google" and not thinking_level:
         console.print(
             create_question_box(

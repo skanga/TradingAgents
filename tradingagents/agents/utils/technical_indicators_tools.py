@@ -2,7 +2,7 @@ from typing import Annotated
 
 from langchain_core.tools import tool
 
-from tradingagents.agents.utils.tool_dates import RunState, bounded_date
+from tradingagents.agents.utils.tool_dates import DEFAULT_RUN_STATE, RunState, bounded_date
 from tradingagents.dataflows.interface import route_to_vendor
 
 
@@ -12,7 +12,7 @@ def get_indicators(
     indicator: Annotated[str, "technical indicator to get the analysis and report of"],
     curr_date: Annotated[str, "The current trading date you are trading on, YYYY-mm-dd"],
     look_back_days: Annotated[int, "how many days to look back"] = 30,
-    state: RunState = None,
+    state: RunState = DEFAULT_RUN_STATE,
 ) -> str:
     """
     Retrieve a single technical indicator for a given ticker symbol.

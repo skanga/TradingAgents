@@ -2,7 +2,7 @@ from typing import Annotated
 
 from langchain_core.tools import tool
 
-from tradingagents.agents.utils.tool_dates import RunState, bounded_date
+from tradingagents.agents.utils.tool_dates import DEFAULT_RUN_STATE, RunState, bounded_date
 from tradingagents.dataflows.interface import route_to_vendor
 
 
@@ -10,7 +10,7 @@ from tradingagents.dataflows.interface import route_to_vendor
 def get_fundamentals(
     ticker: Annotated[str, "ticker symbol"],
     curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"],
-    state: RunState = None,
+    state: RunState = DEFAULT_RUN_STATE,
 ) -> str:
     """
     Retrieve comprehensive fundamental data for a given ticker symbol.
@@ -29,7 +29,7 @@ def get_balance_sheet(
     ticker: Annotated[str, "ticker symbol"],
     freq: Annotated[str, "reporting frequency: annual/quarterly"] = "quarterly",
     curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"] = None,
-    state: RunState = None,
+    state: RunState = DEFAULT_RUN_STATE,
 ) -> str:
     """
     Retrieve balance sheet data for a given ticker symbol.
@@ -49,7 +49,7 @@ def get_cashflow(
     ticker: Annotated[str, "ticker symbol"],
     freq: Annotated[str, "reporting frequency: annual/quarterly"] = "quarterly",
     curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"] = None,
-    state: RunState = None,
+    state: RunState = DEFAULT_RUN_STATE,
 ) -> str:
     """
     Retrieve cash flow statement data for a given ticker symbol.
@@ -69,7 +69,7 @@ def get_income_statement(
     ticker: Annotated[str, "ticker symbol"],
     freq: Annotated[str, "reporting frequency: annual/quarterly"] = "quarterly",
     curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"] = None,
-    state: RunState = None,
+    state: RunState = DEFAULT_RUN_STATE,
 ) -> str:
     """
     Retrieve income statement data for a given ticker symbol.

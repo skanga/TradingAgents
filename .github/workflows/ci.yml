@@ -51,6 +51,10 @@ jobs:
           # Catches undeclared runtime deps (e.g. #994 python-dotenv): a bare
           # install must import the package and the CLI module.
           python -c "import tradingagents, cli.main; print('clean-install import OK')"
+      - name: Service-only install and import
+        run: |
+          pip install ".[service]"
+          python -c "import service.app; print('service-install import OK')"
 
   lint:
     name: ruff (strict, full repo)

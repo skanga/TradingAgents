@@ -2,7 +2,7 @@ from typing import Annotated
 
 from langchain_core.tools import tool
 
-from tradingagents.agents.utils.tool_dates import RunState, bounded_date
+from tradingagents.agents.utils.tool_dates import DEFAULT_RUN_STATE, RunState, bounded_date
 from tradingagents.dataflows.market_data_validator import build_verified_market_snapshot
 
 
@@ -13,7 +13,7 @@ def get_verified_market_snapshot(
     look_back_days: Annotated[
         int, "number of recent trading rows to include for sanity-checking"
     ] = 30,
-    state: RunState = None,
+    state: RunState = DEFAULT_RUN_STATE,
 ) -> str:
     """Deterministic verification snapshot for exact market-data claims.
 

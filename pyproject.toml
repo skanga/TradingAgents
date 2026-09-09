@@ -43,6 +43,7 @@ gui = [
     "markdown>=3.5",
 ]
 service = [
+    "streamlit>=1.36.0",  # API routes reuse cached GUI chart/log helpers.
     "fastapi>=0.136.3",
     "starlette>=1.1.0",
     "uvicorn[standard]>=0.30.0",

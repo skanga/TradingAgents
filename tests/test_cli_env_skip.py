@@ -120,7 +120,9 @@ class TestReasoningEffortSkippedFromEnv(unittest.TestCase):
     def test_effort_env_skips_step8_prompt(self):
         import cli.main as m
 
-        env = {"TRADINGAGENTS_OPENAI_REASONING_EFFORT": "high"}
+        # Do not let a developer's configured provider mask the standalone setting.
+        env = {"TRADINGAGENTS_OPENAI_REASONING_EFFORT": "high",
+               "TRADINGAGENTS_LLM_PROVIDER": ""}
         fake_cfg = dict(m.DEFAULT_CONFIG)
         fake_cfg.update({"openai_reasoning_effort": "high"})
 
