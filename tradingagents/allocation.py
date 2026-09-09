@@ -243,6 +243,9 @@ def _validate_inputs(results: Sequence[BatchTickerResult], available_cash: float
         if ticker in seen_tickers:
             raise ValueError(f"Duplicate ticker in allocation results: {result.ticker}")
         seen_tickers.add(ticker)
+    for result in results:
+        if result.review_required or result.rating not in _RATING_SCORES or result.status != "success":
+            raise ValueError(f"Human review required for {result.ticker}; allocation was not generated.")
 
 
 def _current_value(result: BatchTickerResult, prices: dict[str, float]) -> float:

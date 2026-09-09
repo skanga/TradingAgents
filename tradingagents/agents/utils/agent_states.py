@@ -1,11 +1,16 @@
 from typing import Annotated
 
 from langgraph.graph import MessagesState
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 
 # Researcher team state
 class InvestDebateState(TypedDict):
+    round_snapshot: NotRequired[dict]
+    round_speakers: NotRequired[list[str]]
+    current_bull_response: NotRequired[str]
+    current_bear_response: NotRequired[str]
+    last_debater: NotRequired[str]
     bull_history: Annotated[
         str, "Bullish Conversation history"
     ]  # Bullish Conversation history
@@ -20,6 +25,8 @@ class InvestDebateState(TypedDict):
 
 # Risk management team state
 class RiskDebateState(TypedDict):
+    round_snapshot: NotRequired[dict]
+    round_speakers: NotRequired[list[str]]
     aggressive_history: Annotated[
         str, "Aggressive Agent's Conversation history"
     ]  # Conversation history
@@ -72,5 +79,6 @@ class AgentState(MessagesState):
     risk_debate_state: Annotated[
         RiskDebateState, "Current state of the debate on evaluating risk"
     ]
-    final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
+    final_trade_decision: Annotated[str, "Final advisory decision; REVIEW requires human approval"]
+    decision_review: NotRequired[dict]  # Frozen evidence, proposals/checks; never execution authority
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]

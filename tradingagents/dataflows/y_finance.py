@@ -6,7 +6,7 @@ import pandas as pd
 import yfinance as yf
 from dateutil.relativedelta import relativedelta
 
-from .date_window import withhold_live_profile
+from .date_window import withhold_live_profile, withhold_unversioned_statements
 from .stockstats_utils import (
     StockstatsUtils,
     _assert_ohlcv_not_stale,
@@ -364,6 +364,9 @@ def get_balance_sheet(
     curr_date: Annotated[str, "current date in YYYY-MM-DD format"] = None
 ):
     """Get balance sheet data from yfinance."""
+    withheld = withhold_unversioned_statements(curr_date, ticker)
+    if withheld:
+        return withheld
     canonical = normalize_symbol(ticker)
     try:
         ticker_obj = yf.Ticker(canonical)
@@ -399,6 +402,9 @@ def get_cashflow(
     curr_date: Annotated[str, "current date in YYYY-MM-DD format"] = None
 ):
     """Get cash flow data from yfinance."""
+    withheld = withhold_unversioned_statements(curr_date, ticker)
+    if withheld:
+        return withheld
     canonical = normalize_symbol(ticker)
     try:
         ticker_obj = yf.Ticker(canonical)
@@ -434,6 +440,9 @@ def get_income_statement(
     curr_date: Annotated[str, "current date in YYYY-MM-DD format"] = None
 ):
     """Get income statement data from yfinance."""
+    withheld = withhold_unversioned_statements(curr_date, ticker)
+    if withheld:
+        return withheld
     canonical = normalize_symbol(ticker)
     try:
         ticker_obj = yf.Ticker(canonical)

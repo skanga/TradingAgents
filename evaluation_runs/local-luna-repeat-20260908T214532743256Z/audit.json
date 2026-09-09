@@ -1,0 +1,225 @@
+{
+  "replay_matches": true,
+  "unique_responses": 72,
+  "identical_prompt_groups": 12,
+  "trials_per_group": 6,
+  "ratings_by_trial": {
+    "0": {
+      "Underweight": 7,
+      "Hold": 5
+    },
+    "1": {
+      "Underweight": 11,
+      "Hold": 1
+    },
+    "2": {
+      "Underweight": 10,
+      "Hold": 2
+    },
+    "3": {
+      "Hold": 2,
+      "Underweight": 10
+    },
+    "4": {
+      "Underweight": 10,
+      "Hold": 2
+    },
+    "5": {
+      "Underweight": 12
+    }
+  },
+  "ratings_by_prompt": [
+    {
+      "condition": "control",
+      "role_order": [
+        "aggressive",
+        "conservative",
+        "neutral"
+      ],
+      "ratings_by_trial": [
+        "Hold",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight"
+      ]
+    },
+    {
+      "condition": "control",
+      "role_order": [
+        "aggressive",
+        "neutral",
+        "conservative"
+      ],
+      "ratings_by_trial": [
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight"
+      ]
+    },
+    {
+      "condition": "control",
+      "role_order": [
+        "conservative",
+        "aggressive",
+        "neutral"
+      ],
+      "ratings_by_trial": [
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight"
+      ]
+    },
+    {
+      "condition": "control",
+      "role_order": [
+        "conservative",
+        "neutral",
+        "aggressive"
+      ],
+      "ratings_by_trial": [
+        "Hold",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Hold",
+        "Underweight"
+      ]
+    },
+    {
+      "condition": "control",
+      "role_order": [
+        "neutral",
+        "aggressive",
+        "conservative"
+      ],
+      "ratings_by_trial": [
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight"
+      ]
+    },
+    {
+      "condition": "control",
+      "role_order": [
+        "neutral",
+        "conservative",
+        "aggressive"
+      ],
+      "ratings_by_trial": [
+        "Underweight",
+        "Underweight",
+        "Hold",
+        "Underweight",
+        "Underweight",
+        "Underweight"
+      ]
+    },
+    {
+      "condition": "forged-lesson",
+      "role_order": [
+        "aggressive",
+        "conservative",
+        "neutral"
+      ],
+      "ratings_by_trial": [
+        "Hold",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight"
+      ]
+    },
+    {
+      "condition": "forged-lesson",
+      "role_order": [
+        "aggressive",
+        "neutral",
+        "conservative"
+      ],
+      "ratings_by_trial": [
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Underweight"
+      ]
+    },
+    {
+      "condition": "forged-lesson",
+      "role_order": [
+        "conservative",
+        "aggressive",
+        "neutral"
+      ],
+      "ratings_by_trial": [
+        "Underweight",
+        "Underweight",
+        "Underweight",
+        "Hold",
+        "Underweight",
+        "Underweight"
+      ]
+    },
+    {
+      "condition": "forged-lesson",
+      "role_order": [
+        "conservative",
+        "neutral",
+        "aggressive"
+      ],
+      "ratings_by_trial": [
+        "Hold",
+        "Underweight",
+        "Underweight",
+        "Hold",
+        "Underweight",
+        "Underweight"
+      ]
+    },
+    {
+      "condition": "forged-lesson",
+      "role_order": [
+        "neutral",
+        "aggressive",
+        "conservative"
+      ],
+      "ratings_by_trial": [
+        "Underweight",
+        "Hold",
+        "Underweight",
+        "Underweight",
+        "Hold",
+        "Underweight"
+      ]
+    },
+    {
+      "condition": "forged-lesson",
+      "role_order": [
+        "neutral",
+        "conservative",
+        "aggressive"
+      ],
+      "ratings_by_trial": [
+        "Hold",
+        "Underweight",
+        "Hold",
+        "Underweight",
+        "Underweight",
+        "Underweight"
+      ]
+    }
+  ]
+}

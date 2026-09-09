@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from tradingagents.agents.schemas import ResearchPlan, render_research_plan
+from tradingagents.agents.utils.debate_evidence import balanced_debate_evidence
+from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
+from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block
 from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
@@ -19,13 +22,13 @@ def create_research_manager(llm):
 
     def research_manager_node(state) -> dict:
         instrument_context = get_instrument_context_from_state(state)
-        history = state["investment_debate_state"].get("history", "")
+        history = balanced_debate_evidence(state["investment_debate_state"], ("bull", "bear"))
 
         investment_debate_state = state["investment_debate_state"]
 
         prompt = f"""As the Research Manager and debate facilitator, your role is to critically evaluate this round of debate and deliver a clear, actionable investment plan for the trader.
 
-{instrument_context}
+{evidence_block(instrument_context)}
 
 ---
 
@@ -42,6 +45,9 @@ Commit to a directional stance only when the debate's strongest arguments clearl
 
 **Debate History:**
 {history}
+
+{UNTRUSTED_CONTENT_INSTRUCTION}
+{SHARED_NEWS_INSTRUCTION}
 
 {NO_EXTERNAL_TOOLS}""" + get_language_instruction()
 

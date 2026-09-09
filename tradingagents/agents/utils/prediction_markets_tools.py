@@ -3,6 +3,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 
 from tradingagents.dataflows.interface import route_to_vendor
+from tradingagents.agents.utils.tool_dates import RunState, live_only_notice
 
 
 @tool
@@ -13,6 +14,7 @@ def get_prediction_markets(
         "'US election', or a sector/company event.",
     ],
     limit: Annotated[int | None, "Max markets to return; omit for a default of 6"] = None,
+    state: RunState = None,
 ) -> str:
     """
     Retrieve live, market-implied probabilities for forward-looking events from
@@ -28,4 +30,5 @@ def get_prediction_markets(
     Returns:
         str: A formatted markdown report of matching prediction markets
     """
-    return route_to_vendor("get_prediction_markets", topic, limit)
+    notice = live_only_notice(state, "Prediction markets")
+    return notice if notice else route_to_vendor("get_prediction_markets", topic, limit)

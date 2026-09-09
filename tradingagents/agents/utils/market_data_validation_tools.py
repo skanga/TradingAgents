@@ -3,6 +3,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 
 from tradingagents.dataflows.market_data_validator import build_verified_market_snapshot
+from tradingagents.agents.utils.tool_dates import RunState, bounded_date
 
 
 @tool
@@ -12,6 +13,7 @@ def get_verified_market_snapshot(
     look_back_days: Annotated[
         int, "number of recent trading rows to include for sanity-checking"
     ] = 30,
+    state: RunState = None,
 ) -> str:
     """Deterministic verification snapshot for exact market-data claims.
 
@@ -20,4 +22,4 @@ def get_verified_market_snapshot(
     price levels, Bollinger bands, RSI, MACD, moving averages, support /
     resistance, or historical comparisons, and treat it as the source of truth.
     """
-    return build_verified_market_snapshot(symbol, curr_date, look_back_days)
+    return build_verified_market_snapshot(symbol, bounded_date(curr_date, state), look_back_days)

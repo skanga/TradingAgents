@@ -1,4 +1,6 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from tradingagents.agents.utils.response_integrity import invoke_complete_tool_or_text, response_text
+from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block, evidence_history
 
 from tradingagents.agents.utils.agent_utils import (
     get_indicators,
@@ -63,29 +65,31 @@ Write a very detailed and nuanced report of the trends you observe. Provide spec
                     " Use the provided tools to progress towards answering the question."
                     " If you are unable to fully answer, that's OK; another assistant with different tools"
                     " will help where you left off. Execute what you can to make progress."
-                    " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
-                    " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
+                    " Produce an evidence report, not a transaction proposal. Report supportive, adverse and neutral findings; do not force a directional conclusion."
                     " You have access to the following tools: {tool_names}."
-                    " Today's date is {current_date}; treat it as 'now' for all analysis and tool-call date ranges. {instrument_context}\n"
+                    " Today's date is {current_date}; treat it as 'now' for all analysis and tool-call date ranges.\n"
                     "{system_message}",
                 ),
+                ("human", "Instrument context:\n{instrument_context}"),
                 MessagesPlaceholder(variable_name="messages"),
             ]
         )
 
-        prompt = prompt.partial(system_message=system_message)
+        prompt = prompt.partial(system_message=str(system_message) + "\n" + UNTRUSTED_CONTENT_INSTRUCTION)
         prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
         prompt = prompt.partial(current_date=current_date)
-        prompt = prompt.partial(instrument_context=instrument_context)
+        prompt = prompt.partial(instrument_context=evidence_block(instrument_context))
 
         chain = prompt | llm.bind_tools(tools)
 
-        result = chain.invoke(state["messages"])
+        result = invoke_complete_tool_or_text(
+            chain, evidence_history(state["messages"]), {tool.name for tool in tools}
+        )
 
         report = ""
 
         if len(result.tool_calls) == 0:
-            report = result.content
+            report = response_text(result)
 
         return {
             "messages": [result],

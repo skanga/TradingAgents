@@ -11,6 +11,9 @@ back gracefully to free-text generation.
 from __future__ import annotations
 
 from tradingagents.agents.schemas import PortfolioDecision, render_pm_decision
+from tradingagents.agents.utils.debate_evidence import balanced_debate_evidence
+from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
+from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block
 from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
@@ -22,27 +25,22 @@ from tradingagents.agents.utils.structured import (
 )
 
 
-def create_portfolio_manager(llm):
-    structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
+def build_portfolio_prompt(state, role_order=("aggressive", "conservative", "neutral")) -> str:
+    """Shared runtime/evaluation prompt; production uses the canonical role order."""
+    if len(role_order) != 3 or set(role_order) != {"aggressive", "conservative", "neutral"}:
+        raise ValueError("Portfolio role order must contain each risk role exactly once")
+    instrument_context = get_instrument_context_from_state(state)
+    history = balanced_debate_evidence(state["risk_debate_state"], role_order)
+    research_plan = state["investment_plan"]
+    trader_plan = state["trader_investment_plan"]
+    past_context = state.get("past_context", "")
+    lessons_line = (
+        f"- Lessons from prior decisions and outcomes:\n{evidence_block(past_context)}\n"
+        if past_context else ""
+    )
+    return f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
 
-    def portfolio_manager_node(state) -> dict:
-        instrument_context = get_instrument_context_from_state(state)
-
-        history = state["risk_debate_state"]["history"]
-        risk_debate_state = state["risk_debate_state"]
-        research_plan = state["investment_plan"]
-        trader_plan = state["trader_investment_plan"]
-
-        past_context = state.get("past_context", "")
-        lessons_line = (
-            f"- Lessons from prior decisions and outcomes:\n{past_context}\n"
-            if past_context
-            else ""
-        )
-
-        prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
-
-{instrument_context}
+{evidence_block(instrument_context)}
 
 ---
 
@@ -54,8 +52,8 @@ def create_portfolio_manager(llm):
 - **Sell**: Exit position or avoid entry
 
 **Context:**
-- Research Manager's investment plan: **{research_plan}**
-- Trader's transaction proposal: **{trader_plan}**
+- Research Manager's investment plan: **{evidence_block(research_plan)}**
+- Trader's transaction proposal: **{evidence_block(trader_plan)}**
 {lessons_line}
 **Risk Analysts Debate History:**
 {history}
@@ -64,8 +62,18 @@ def create_portfolio_manager(llm):
 
 Ground every conclusion in specific evidence from the analysts. Commit to a directional call only when the evidence clearly supports one; choose Hold when the case is balanced, materially conflicting, ambiguous, or insufficient to justify changing exposure, rather than forcing a direction to appear decisive. Weigh the analysts on their merits, independent of speaking order.
 
+{UNTRUSTED_CONTENT_INSTRUCTION}
+{SHARED_NEWS_INSTRUCTION}
+
 {NO_EXTERNAL_TOOLS}{get_language_instruction()}"""
 
+
+def create_portfolio_manager(llm):
+    structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
+
+    def portfolio_manager_node(state) -> dict:
+        prompt = build_portfolio_prompt(state)
+        risk_debate_state = state["risk_debate_state"]
         final_trade_decision = invoke_structured_or_freetext(
             structured_llm,
             llm,

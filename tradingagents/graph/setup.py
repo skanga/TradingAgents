@@ -21,12 +21,14 @@ from tradingagents.agents import (
     create_trader,
 )
 from tradingagents.agents.utils.agent_states import AgentState
+from tradingagents.agents.utils.decision_review import with_decision_review
 
 from .analyst_execution import (
     ANALYST_NODE_SPECS,
     build_analyst_execution_plan,
 )
 from .conditional_logic import ConditionalLogic
+from .debate_rounds import round_isolated_debater
 
 
 @dataclass(frozen=True)
@@ -161,7 +163,9 @@ class GraphSetup:
         aggressive_analyst = create_aggressive_debator(self.quick_thinking_llm)
         neutral_analyst = create_neutral_debator(self.quick_thinking_llm)
         conservative_analyst = create_conservative_debator(self.quick_thinking_llm)
-        portfolio_manager_node = create_portfolio_manager(self.deep_thinking_llm)
+        portfolio_manager_node = with_decision_review(
+            create_portfolio_manager(self.deep_thinking_llm), self.deep_thinking_llm
+        )
 
         # Create workflow
         workflow = StateGraph(AgentState)
@@ -174,13 +178,20 @@ class GraphSetup:
             workflow.add_node(spec.tool_name, tool_nodes[analyst_type])
 
         # Add other nodes
-        workflow.add_node("Bull Researcher", bull_researcher_node)
-        workflow.add_node("Bear Researcher", bear_researcher_node)
+        research_roles = ("bull", "bear")
+        workflow.add_node("Bull Researcher", round_isolated_debater(
+            bull_researcher_node, "investment_debate_state", "bull", research_roles))
+        workflow.add_node("Bear Researcher", round_isolated_debater(
+            bear_researcher_node, "investment_debate_state", "bear", research_roles))
         workflow.add_node("Research Manager", research_manager_node)
         workflow.add_node("Trader", trader_node)
-        workflow.add_node("Aggressive Analyst", aggressive_analyst)
-        workflow.add_node("Neutral Analyst", neutral_analyst)
-        workflow.add_node("Conservative Analyst", conservative_analyst)
+        risk_roles = ("aggressive", "conservative", "neutral")
+        workflow.add_node("Aggressive Analyst", round_isolated_debater(
+            aggressive_analyst, "risk_debate_state", "aggressive", risk_roles))
+        workflow.add_node("Neutral Analyst", round_isolated_debater(
+            neutral_analyst, "risk_debate_state", "neutral", risk_roles))
+        workflow.add_node("Conservative Analyst", round_isolated_debater(
+            conservative_analyst, "risk_debate_state", "conservative", risk_roles))
         workflow.add_node("Portfolio Manager", portfolio_manager_node)
 
         # Define edges

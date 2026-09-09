@@ -1,0 +1,17 @@
+{
+  "backend": {
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "base_url": "http://127.0.0.1:10531/v1",
+    "timeout": 300,
+    "max_retries": 0
+  },
+  "evidence_provenance": "synthetic",
+  "response_provenance": "live-local-endpoint",
+  "approved_attempts_this_run": 1,
+  "prior_generation_attempts": 2,
+  "original_budget": 48,
+  "selected_task_id": "2359213eb7fdc528bd8f9087a79dd0a9ebc895db24c51933808b205c2e8bae7a",
+  "started_at": "2026-09-08T20:28:40.084871+00:00",
+  "note": "One manually authorized diagnostic attempt; stop after the first saved result. Do not pool different timeout configurations."
+}

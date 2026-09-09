@@ -32,6 +32,21 @@ def in_window(pub_dt: datetime | None, start_dt: datetime, end_dt: datetime) -> 
     return end >= datetime.now(timezone.utc) - timedelta(days=1)
 
 
+def withhold_unversioned_statements(curr_date: str | None, label: str) -> str | None:
+    """Neither current statement adapter supplies an as-published historical vintage."""
+    if curr_date is None:
+        return None
+    value = datetime.strptime(curr_date, "%Y-%m-%d").strftime("%Y-%m-%d")
+    if value >= get_current_date():
+        return None
+    return (
+        f"DATA_UNAVAILABLE: Financial statements for {label} withheld as of {value}. "
+        "The source does not establish publication dates and as-published historical "
+        "vintages (including later restatements). A fiscal period end is not a "
+        "publication date. Use a point-in-time filing source; do not infer missing values."
+    )
+
+
 def withhold_live_profile(curr_date: str | None, label: str) -> str | None:
     """Notice to serve instead of a live-only company profile, or None to serve it.
 
@@ -56,6 +71,6 @@ def withhold_live_profile(curr_date: str | None, label: str) -> str | None:
         f"today's quote, and even the name, sector and industry reflect today "
         f"rather than {curr_date} (companies rename and get reclassified). "
         f"Serving them would put post-decision information into a {curr_date} "
-        f"analysis. Point-in-time fundamentals for {curr_date} are available "
-        f"from the balance sheet, income statement, and cash flow tools."
+        f"analysis. Historical statements also require verified publication "
+        f"dates and as-published vintages; fiscal period ends alone are insufficient."
     )

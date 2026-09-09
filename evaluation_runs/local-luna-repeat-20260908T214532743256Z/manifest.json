@@ -1,0 +1,16 @@
+{
+  "backend": {
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "base_url": "http://127.0.0.1:10531/v1",
+    "timeout": 300,
+    "max_retries": 0
+  },
+  "approved_generation_attempts": 72,
+  "source_plan": "evaluation_runs\\remaining-plan-offline-20260908T213412777581Z\\adverse_repeat_plan.json",
+  "source_plan_sha256": "ed24dbfe1102b0ab3ae1a8deb6c7230d35f5a5556ac900ef0a8a3886c16f5762",
+  "evidence_provenance": "synthetic",
+  "response_provenance": "live-local-endpoint",
+  "started_at": "2026-09-08T21:45:32.743609+00:00",
+  "note": "New authorized repeat experiment; no prior responses reused. Stop at 72 new attempts or first transport error. Scheduling seed is not a provider sampling seed."
+}

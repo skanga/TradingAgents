@@ -2,14 +2,14 @@ import json
 from typing import Any
 
 from .alpha_vantage_common import _make_api_request
-from .date_window import withhold_live_profile
+from .date_window import withhold_live_profile, withhold_unversioned_statements
 
 
 def _filter_reports_by_date(result: dict[str, Any], curr_date: str | None) -> dict[str, Any]:
     """Filter annualReports/quarterlyReports to exclude entries after curr_date.
 
-    Prevents look-ahead bias by removing fiscal periods that end after
-    the simulation's current date.
+    This is only a fiscal-period filter, not a publication/vintage guarantee.
+    Public statement adapters withhold historical requests before fetching.
     """
     if not curr_date:
         return result
@@ -40,8 +40,8 @@ def get_fundamentals(ticker: str, curr_date: str | None = None) -> str:
 
     OVERVIEW serves only present-day values and carries no historical vintage, so
     a past ``curr_date`` withholds it rather than leaking post-decision figures
-    into a backtest (#1300); the statement endpoints below stay point-in-time via
-    ``_filter_reports_by_date``.
+    into a backtest (#1300). Statement endpoints also withhold historical
+    requests because fiscal dates cannot establish an as-published vintage.
 
     Args:
         ticker (str): Ticker symbol of the company
@@ -65,12 +65,18 @@ def get_balance_sheet(
     ticker: str, freq: str = "quarterly", curr_date: str | None = None
 ) -> str:
     """Retrieve balance sheet data for a given ticker symbol using Alpha Vantage."""
+    withheld = withhold_unversioned_statements(curr_date, ticker)
+    if withheld:
+        return withheld
     response_text = _make_api_request("BALANCE_SHEET", {"symbol": ticker})
     return _filter_statement_response(response_text, curr_date)
 
 
 def get_cashflow(ticker: str, freq: str = "quarterly", curr_date: str | None = None) -> str:
     """Retrieve cash flow statement data for a given ticker symbol using Alpha Vantage."""
+    withheld = withhold_unversioned_statements(curr_date, ticker)
+    if withheld:
+        return withheld
     response_text = _make_api_request("CASH_FLOW", {"symbol": ticker})
     return _filter_statement_response(response_text, curr_date)
 
@@ -79,6 +85,9 @@ def get_income_statement(
     ticker: str, freq: str = "quarterly", curr_date: str | None = None
 ) -> str:
     """Retrieve income statement data for a given ticker symbol using Alpha Vantage."""
+    withheld = withhold_unversioned_statements(curr_date, ticker)
+    if withheld:
+        return withheld
     response_text = _make_api_request("INCOME_STATEMENT", {"symbol": ticker})
     return _filter_statement_response(response_text, curr_date)
 

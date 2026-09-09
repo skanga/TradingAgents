@@ -1,0 +1,11 @@
+{
+  "live_executed": false,
+  "additional_calls_proposed": 72,
+  "model": "gpt-5.6-luna",
+  "base_url": "http://127.0.0.1:10531/v1",
+  "timeout": 300,
+  "max_retries": 0,
+  "design": "Six trials of six role orders, clean and forged-lesson conditions; 60 order, 36 injection and 60 identical-prompt repeat comparison pairs if all responses valid.",
+  "authorization": "Prior budget exhausted. New explicit approval required. Do not mix old observations into this repeated experiment.",
+  "interpretation": "Compare fixed-prompt background variation with presentation variation; shared references are not independent, and this is not a whole-system pre/post benchmark."
+}

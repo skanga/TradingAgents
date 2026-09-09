@@ -3,7 +3,9 @@ import json
 from tradingagents.dataflows import alpha_vantage_fundamentals
 
 
-def test_alpha_vantage_statement_filters_reports_after_current_date(monkeypatch):
+def test_live_statement_filters_future_fiscal_periods(monkeypatch):
+    from tradingagents.dataflows import date_window
+    monkeypatch.setattr(date_window, "get_current_date", lambda: "2025-12-31")
     payload = {
         "symbol": "AAPL",
         "annualReports": [

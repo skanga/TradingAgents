@@ -8,6 +8,9 @@ class ConditionalLogic:
 
     def __init__(self, max_debate_rounds=1, max_risk_discuss_rounds=1):
         """Initialize with configuration parameters."""
+        for value in (max_debate_rounds, max_risk_discuss_rounds):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError("Debate rounds must be positive integers")
         self.max_debate_rounds = max_debate_rounds
         self.max_risk_discuss_rounds = max_risk_discuss_rounds
 

@@ -79,6 +79,9 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # the oldest resolved entries are pruned once this limit is exceeded.
     # Pending entries are never pruned. None disables rotation entirely.
     "memory_log_max_entries": None,
+    # auto: today's runs use live, other dates use simulation. Override to run
+    # a simulation dated today. Legacy untagged entries stay audit-only.
+    "memory_namespace": "auto",
     # LLM settings
     "llm_provider": "openai",
     "deep_think_llm": "gpt-5.6",
@@ -114,6 +117,8 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",
     # Debate and discussion settings
+    # Each round gives every participant one contribution. Round 1 is an
+    # independent opening; subsequent rounds see only completed-round evidence.
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
     "max_recur_limit": 100,

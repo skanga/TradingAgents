@@ -36,9 +36,18 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .date_window import in_window
+from .social_evidence import SocialSample, bounded_sample_limit
 from .symbol_utils import crypto_base
 
 logger = logging.getLogger(__name__)
+
+
+def _post_datetime(post):
+    """Missing/malformed timestamps are unknown, never fabricated dates."""
+    try:
+        return datetime.fromtimestamp(post.get("created_utc"), tz=timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
 
 
 def _within_window(posts, start_date, end_date):
@@ -53,8 +62,7 @@ def _within_window(posts, start_date, end_date):
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
     kept = []
     for p in posts:
-        ts = p.get("created_utc")
-        created = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
+        created = _post_datetime(p)
         if in_window(created, start_dt, end_dt):
             kept.append(p)
     return kept
@@ -203,7 +211,12 @@ def _fetch_subreddit_rss(
         title_el = entry.find("atom:title", _ATOM_NS)
         published_el = entry.find("atom:published", _ATOM_NS)
         content_el = entry.find("atom:content", _ATOM_NS)
+        link_el = entry.find("atom:link", _ATOM_NS)
+        author = entry.findtext("atom:author/atom:name", default="", namespaces=_ATOM_NS)
         posts.append({
+            "id": entry.findtext("atom:id", default="", namespaces=_ATOM_NS),
+            "author": author.removeprefix("/u/").removeprefix("u/") or None,
+            "permalink": link_el.get("href") if link_el is not None else None,
             "title": (title_el.text if title_el is not None else "") or "",
             "score": None,
             "num_comments": None,
@@ -264,7 +277,7 @@ def _fetch_subreddit(
 def fetch_reddit_posts(
     ticker: str,
     subreddits: Iterable[str] = DEFAULT_SUBREDDITS,
-    limit_per_sub: int = 5,
+    limit_per_sub: int = 15,
     timeout: float = 10.0,
     inter_request_delay: float = 1.0,
     start_date: str | None = None,
@@ -284,7 +297,9 @@ def fetch_reddit_posts(
     # Crypto reaches us as a Yahoo pair (BTC-USD); search Reddit for the base
     # ("BTC") so the query actually matches discussion instead of near-nothing.
     ticker = crypto_base(ticker) or ticker
-    subreddits = list(subreddits)
+    limit_per_sub = bounded_sample_limit(limit_per_sub, 100)
+    subreddits = list(dict.fromkeys(subreddits))
+    sample = SocialSample()
     blocks = []
     total_posts = 0
     unavailable = []
@@ -303,10 +318,17 @@ def fetch_reddit_posts(
             unavailable.append(sub)
             blocks.append(f"r/{sub}: <unavailable: fetch failed, not an absence of posts>")
             continue
-        posts = _within_window(fetched, start_date, end_date)
+        posts = _within_window(fetched[:limit_per_sub], start_date, end_date)
+        in_window_count = len(posts)
+        posts = sample.select(
+            posts, limit_per_sub,
+            identity=lambda p: p.get("id") or p.get("name") or p.get("permalink"),
+            author=lambda p: p.get("author"),
+            text=lambda p: (p.get("title") or "") + "\n" + (p.get("selftext") or ""),
+        )
         total_posts += len(posts)
         if not posts:
-            blocks.append(f"r/{sub}: <no posts found mentioning {ticker.upper()} in the past 7 days>")
+            blocks.append(f"r/{sub}: <no posts retained; {in_window_count} in-window candidates before sample controls>")
             continue
 
         via_rss = any(p.get("source") == "rss" for p in posts)
@@ -317,15 +339,15 @@ def fetch_reddit_posts(
             title = (p.get("title") or "").replace("\n", " ").strip()
             score = p.get("score")
             comments = p.get("num_comments")
-            created = p.get("created_utc")
-            created_str = (
-                time.strftime("%Y-%m-%d", time.gmtime(created)) if created else "?"
-            )
+            created = _post_datetime(p)
+            created_str = created.strftime("%Y-%m-%d") if created else "?"
             # Score / comment counts are absent on the RSS fallback path —
             # show them only when present rather than printing fake zeros.
-            meta = created_str
+            meta = created_str + f" · author: {p.get('author') or 'unknown'}"
             if score is not None and comments is not None:
                 meta += f" · {score:>4}↑ · {comments:>3}c"
+            else:
+                meta += " · scores/comments unavailable"
             selftext = (p.get("selftext") or "").replace("\n", " ").strip()
             if len(selftext) > 240:
                 selftext = selftext[:240] + "…"
@@ -354,5 +376,7 @@ def fetch_reddit_posts(
                 f"\n<unavailable (fetch failed): "
                 f"{', '.join(f'r/{s}' for s in unavailable)}>"
             )
-        return summary
-    return "\n\n".join(blocks)
+        if sample.observed:
+            return "No Reddit posts retained after sample controls.\n" + sample.summary() + "\n\n" + "\n\n".join(blocks)
+        return summary + "\nCoverage is limited to recent search results, not a historical archive; missing matches do not establish an absence of discussion."
+    return sample.summary() + "\n\n" + "\n\n".join(blocks)

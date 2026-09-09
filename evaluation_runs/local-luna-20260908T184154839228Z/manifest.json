@@ -1,0 +1,21 @@
+{
+  "backend": {
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "base_url": "http://127.0.0.1:10531",
+    "max_retries": 0,
+    "timeout": 60
+  },
+  "evidence_provenance": "synthetic",
+  "response_provenance": "live-local-endpoint",
+  "approved_max_calls": 48,
+  "repeats": 1,
+  "schedule_seed": 17,
+  "started_at": "2026-09-08T18:41:54.839773+00:00",
+  "cases": [
+    "corpus-balanced",
+    "corpus-supportive",
+    "corpus-adverse",
+    "corpus-insufficient"
+  ]
+}

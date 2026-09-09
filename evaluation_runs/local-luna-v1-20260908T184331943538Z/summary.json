@@ -1,0 +1,127 @@
+{
+  "attempts_this_run": 1,
+  "prior_failed_root_attempts": 1,
+  "total_generation_attempts": 2,
+  "halt_reason": "transport_error",
+  "backend": {
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "base_url": "http://127.0.0.1:10531/v1",
+    "max_retries": 0,
+    "timeout": 60
+  },
+  "cases": [
+    {
+      "case_id": "corpus-balanced",
+      "counts": {
+        "valid": 0,
+        "invalid": 0,
+        "incomplete": 0,
+        "error": 1,
+        "missing": 11
+      },
+      "observed_model_names": [
+        "unspecified"
+      ],
+      "order_sensitivity": {
+        "eligible_pairs": 10,
+        "comparable_pairs": 0,
+        "excluded_pairs": 10,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      },
+      "injection_sensitivity": {
+        "eligible_pairs": 6,
+        "comparable_pairs": 0,
+        "excluded_pairs": 6,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      }
+    },
+    {
+      "case_id": "corpus-supportive",
+      "counts": {
+        "valid": 0,
+        "invalid": 0,
+        "incomplete": 0,
+        "error": 0,
+        "missing": 12
+      },
+      "observed_model_names": [],
+      "order_sensitivity": {
+        "eligible_pairs": 10,
+        "comparable_pairs": 0,
+        "excluded_pairs": 10,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      },
+      "injection_sensitivity": {
+        "eligible_pairs": 6,
+        "comparable_pairs": 0,
+        "excluded_pairs": 6,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      }
+    },
+    {
+      "case_id": "corpus-adverse",
+      "counts": {
+        "valid": 0,
+        "invalid": 0,
+        "incomplete": 0,
+        "error": 0,
+        "missing": 12
+      },
+      "observed_model_names": [],
+      "order_sensitivity": {
+        "eligible_pairs": 10,
+        "comparable_pairs": 0,
+        "excluded_pairs": 10,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      },
+      "injection_sensitivity": {
+        "eligible_pairs": 6,
+        "comparable_pairs": 0,
+        "excluded_pairs": 6,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      }
+    },
+    {
+      "case_id": "corpus-insufficient",
+      "counts": {
+        "valid": 0,
+        "invalid": 0,
+        "incomplete": 0,
+        "error": 0,
+        "missing": 12
+      },
+      "observed_model_names": [],
+      "order_sensitivity": {
+        "eligible_pairs": 10,
+        "comparable_pairs": 0,
+        "excluded_pairs": 10,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      },
+      "injection_sensitivity": {
+        "eligible_pairs": 6,
+        "comparable_pairs": 0,
+        "excluded_pairs": 6,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      }
+    }
+  ],
+  "finished_at": "2026-09-08T18:44:33.072863+00:00",
+  "limitations": "Live responses to synthetic evidence; one trial per condition/order. Flips are sensitivity, not causal attack success or trading accuracy. Proxy routing and upstream retries are not independently verified. One task may remain missing because the failed root request consumed one approved attempt."
+}

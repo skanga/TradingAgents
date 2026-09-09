@@ -10,8 +10,8 @@ Centralising it here avoids drift between those call sites.
 
 ``extract_rating`` returns ``None`` when no rating can be found, so the graph can
 surface an explicit ``REVIEW`` signal instead of a fabricated ``Hold`` (#1170).
-``parse_rating`` keeps the legacy silent-default behaviour for callers (e.g. the
-memory log) that need a rating string regardless.
+``parse_rating`` retains the legacy heuristic for compatibility. New decisions
+use ``parse_actionable_rating``: an explicit unambiguous label or bare rating.
 """
 
 from __future__ import annotations
@@ -79,8 +79,27 @@ def parse_rating(text: str, default: str = "Hold") -> str:
 
 
 def parse_actionable_rating(text: str) -> str:
-    """Parse a decision without silently converting malformed output to Hold."""
-    return parse_rating(text, default=RATING_REVIEW)
+    """Require an unambiguous rating, not a rating word in arbitrary prose.
+
+    Preserve markdown, numbered labels and Unicode punctuation. A malformed or
+    conflicting label invalidates the decision even if other lines look valid.
+    Legacy ``parse_rating`` remains available for non-actionable display callers.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return RATING_REVIEW
+    norm = unicodedata.normalize("NFKC", text).strip()
+    bare = norm.strip("* \t.!")
+    if bare.lower() in _RATING_SET:
+        return bare.capitalize()
+    labels = []
+    for line in norm.splitlines():
+        match = re.match(r"^\s*(?:\d+[.)]\s*)?(?:#{1,6}\s*)?\**Rating\**\s*[:\-]\s*(.*?)\s*$", line, re.IGNORECASE)
+        if match:
+            value = match.group(1).strip("* \t.")
+            if value.lower() not in _RATING_SET:
+                return RATING_REVIEW
+            labels.append(value.capitalize())
+    return labels[0] if labels and len(set(labels)) == 1 else RATING_REVIEW
 
 
 def is_review(signal: str) -> bool:

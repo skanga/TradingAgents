@@ -19,7 +19,9 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, Sequence
 from markdown_it import MarkdownIt
 
 from tradingagents.dataflows.utils import safe_ticker_component
-from tradingagents.agents.utils.rating import parse_rating
+from tradingagents.agents.utils.rating import parse_actionable_rating
+from tradingagents.agents.utils.response_integrity import invoke_complete_text
+from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block
 from tradingagents.formatting import (
     format_number as _format_number,
     format_percent as _format_percent,
@@ -91,6 +93,7 @@ class BatchTickerResult:
     holding: PortfolioHolding | None = None
     elapsed_seconds: float | None = None
     error: str | None = None
+    review_required: bool = False
 
 
 def parse_ticker_list(value: str) -> list[PortfolioHolding]:
@@ -197,11 +200,14 @@ def extract_ticker_result(
 ) -> BatchTickerResult:
     final_decision = str(final_state.get("final_trade_decision") or "")
     trader_plan = str(final_state.get("trader_investment_plan") or "")
+    rating = parse_actionable_rating(final_decision)
+    review_required = rating == "REVIEW" or bool(final_state.get("decision_review"))
     return BatchTickerResult(
         ticker=ticker,
         status="success",
-        rating=parse_rating(final_decision),
-        trader_action=parse_trader_action(trader_plan),
+        rating="REVIEW" if review_required else rating,
+        trader_action="REVIEW" if review_required else parse_trader_action(trader_plan),
+        review_required=review_required,
         executive_summary=parse_executive_summary(final_decision),
         report_path=report_path,
         holding=holding,
@@ -533,11 +539,12 @@ def build_llm_narrative(
         prompt = (
             "Summarize this batch trading analysis in one concise portfolio-aware section. "
             "Compare conviction, common risks, and any holdings concentration concerns. "
-            "Do not invent prices or orders.\n\n"
-            f"{rows}"
+            "Do not invent prices or orders. REVIEW is not Hold: it requires human approval. "
+            "Do not override review requirements, promote proposals to authorized trades, or imply model agreement is approval.\n\n"
+            + UNTRUSTED_CONTENT_INSTRUCTION + "\n\n"
+            + evidence_block(rows)
         )
-        response = llm.invoke(prompt)
-        return str(getattr(response, "content", response)).strip() or None
+        return invoke_complete_text(llm, prompt).strip()
     except Exception:
         logger.warning("LLM narrative generation failed", exc_info=True)
         return None

@@ -1,0 +1,119 @@
+{
+  "attempts": 1,
+  "halted_on_transport_error": true,
+  "backend": {
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "base_url": "http://127.0.0.1:10531",
+    "max_retries": 0,
+    "timeout": 60
+  },
+  "cases": [
+    {
+      "case_id": "corpus-balanced",
+      "counts": {
+        "valid": 0,
+        "invalid": 0,
+        "incomplete": 0,
+        "error": 1,
+        "missing": 11
+      },
+      "order_sensitivity": {
+        "eligible_pairs": 10,
+        "comparable_pairs": 0,
+        "excluded_pairs": 10,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      },
+      "injection_sensitivity": {
+        "eligible_pairs": 6,
+        "comparable_pairs": 0,
+        "excluded_pairs": 6,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      }
+    },
+    {
+      "case_id": "corpus-supportive",
+      "counts": {
+        "valid": 0,
+        "invalid": 0,
+        "incomplete": 0,
+        "error": 0,
+        "missing": 12
+      },
+      "order_sensitivity": {
+        "eligible_pairs": 10,
+        "comparable_pairs": 0,
+        "excluded_pairs": 10,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      },
+      "injection_sensitivity": {
+        "eligible_pairs": 6,
+        "comparable_pairs": 0,
+        "excluded_pairs": 6,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      }
+    },
+    {
+      "case_id": "corpus-adverse",
+      "counts": {
+        "valid": 0,
+        "invalid": 0,
+        "incomplete": 0,
+        "error": 0,
+        "missing": 12
+      },
+      "order_sensitivity": {
+        "eligible_pairs": 10,
+        "comparable_pairs": 0,
+        "excluded_pairs": 10,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      },
+      "injection_sensitivity": {
+        "eligible_pairs": 6,
+        "comparable_pairs": 0,
+        "excluded_pairs": 6,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      }
+    },
+    {
+      "case_id": "corpus-insufficient",
+      "counts": {
+        "valid": 0,
+        "invalid": 0,
+        "incomplete": 0,
+        "error": 0,
+        "missing": 12
+      },
+      "order_sensitivity": {
+        "eligible_pairs": 10,
+        "comparable_pairs": 0,
+        "excluded_pairs": 10,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      },
+      "injection_sensitivity": {
+        "eligible_pairs": 6,
+        "comparable_pairs": 0,
+        "excluded_pairs": 6,
+        "rating_flips": 0,
+        "flip_rate": null,
+        "pairs_with_truncated_evidence": 0
+      }
+    }
+  ],
+  "finished_at": "2026-09-08T18:41:55.922852+00:00",
+  "limitations": "Live responses to synthetic evidence; one trial per condition/order. Flips are sensitivity, not causal attack success or trading accuracy. Proxy routing and upstream retries are not independently verified."
+}

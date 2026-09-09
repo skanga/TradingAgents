@@ -90,7 +90,7 @@ def _clean_identity_value(value: Any) -> str | None:
 
 
 @functools.lru_cache(maxsize=256)
-def resolve_instrument_identity(ticker: str) -> dict:
+def resolve_instrument_identity(ticker: str, curr_date: str | None = None) -> dict:
     """Resolve deterministic identity metadata (company name, sector, …) for a ticker.
 
     This exists to stop the pipeline from hallucinating a *different* company
@@ -108,7 +108,10 @@ def resolve_instrument_identity(ticker: str) -> dict:
     resolves for the same instrument the price path actually fetches (#983).
     """
     from tradingagents.dataflows.symbol_utils import normalize_symbol
+    from tradingagents.dataflows.date_window import withhold_live_profile
 
+    if withhold_live_profile(curr_date, ticker):
+        return {}
     try:
         info = yf.Ticker(normalize_symbol(ticker)).info or {}
     except Exception as exc:  # noqa: BLE001 — fail open, never block the run

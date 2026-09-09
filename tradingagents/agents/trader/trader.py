@@ -7,6 +7,8 @@ import functools
 from langchain_core.messages import AIMessage
 
 from tradingagents.agents.schemas import TraderProposal, render_trader_proposal
+from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
+from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block
 from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
@@ -38,7 +40,7 @@ def create_trader(llm):
                 "market report's price structure -- current price, support/resistance, ATR, and "
                 "volatility -- and use the research plan for direction and strategy. "
             )
-            report_section = f"Technical Market Report:\n{market_report}\n\n"
+            report_section = f"Technical Market Report:\n{evidence_block(market_report)}\n\n"
         else:
             grounding = ""
             report_section = ""
@@ -60,6 +62,7 @@ def create_trader(llm):
                     "instrument's quote currency (for example 189.5), never a percentage "
                     "or a range; convert a percentage distance to the price level it "
                     "implies, or omit the field if you cannot state a number. "
+                    + UNTRUSTED_CONTENT_INSTRUCTION + "\n" + SHARED_NEWS_INSTRUCTION + " "
                     + NO_EXTERNAL_TOOLS
                     + get_language_instruction()
                 ),
@@ -68,9 +71,9 @@ def create_trader(llm):
                 "role": "user",
                 "content": (
                     f"Here is the research team's investment plan for {company_name}. "
-                    f"{instrument_context}\n\n"
+                    f"{evidence_block(instrument_context)}\n\n"
                     f"{report_section}"
-                    f"Proposed Investment Plan:\n{investment_plan}\n\n"
+                    f"Proposed Investment Plan:\n{evidence_block(investment_plan)}\n\n"
                     f"Make an informed, strategic trading decision."
                 ),
             },

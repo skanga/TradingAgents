@@ -8,7 +8,7 @@ Reddit/X/StockTwits content under prompt pressure (verified live).
 The redesigned agent pre-fetches three complementary data sources before
 the LLM is invoked and injects them into the prompt as structured blocks:
 
-  1. News headlines     — Yahoo Finance (institutional framing)
+  1. News headlines     — configured vendor (publisher provenance attached)
   2. StockTwits messages — retail-trader posts indexed by cashtag, with
                            user-labeled Bullish/Bearish sentiment tags
   3. Reddit posts        — r/wallstreetbets, r/stocks, r/investing
@@ -40,6 +40,9 @@ from tradingagents.agents.utils.structured import (
     bind_structured,
     invoke_structured_or_freetext,
 )
+from tradingagents.agents.utils.tool_dates import bounded_date
+from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block, evidence_history
+from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
 from tradingagents.dataflows.reddit import fetch_reddit_posts
 from tradingagents.dataflows.stocktwits import fetch_stocktwits_messages
 
@@ -60,7 +63,7 @@ def create_sentiment_analyst(llm):
 
     def sentiment_analyst_node(state):
         ticker = state["company_of_interest"]
-        end_date = state["trade_date"]
+        end_date = bounded_date(state["trade_date"], state)
         start_date = _seven_days_back(end_date)
         instrument_context = get_instrument_context_from_state(state)
 
@@ -89,27 +92,32 @@ def create_sentiment_analyst(llm):
                 (
                     "system",
                     "You are a helpful AI assistant, collaborating with other assistants."
-                    " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
-                    " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
+                    " Produce an evidence report, not a transaction proposal. Report supportive, adverse and neutral findings; do not force a directional conclusion."
                     # No tool-calling here: the data is pre-fetched into the
                     # prompt, so tool-range wording would only invite a
                     # hallucinated tool call (#1130).
-                    " Today's date is {current_date}; treat it as 'now' for all analysis. {instrument_context}"
+                    " Today's date is {current_date}; treat it as 'now' for all analysis."
                     " " + NO_EXTERNAL_TOOLS +
                     "\n{system_message}",
                 ),
+                ("human", "{source_evidence}"),
                 MessagesPlaceholder(variable_name="messages"),
             ]
         )
 
         prompt = prompt.partial(system_message=system_message)
         prompt = prompt.partial(current_date=end_date)
-        prompt = prompt.partial(instrument_context=instrument_context)
+        prompt = prompt.partial(source_evidence="\n\n".join([
+            "Instrument context:\n" + evidence_block(instrument_context),
+            "News:\n" + evidence_block(news_block),
+            "StockTwits:\n" + evidence_block(stocktwits_block),
+            "Reddit:\n" + evidence_block(reddit_block),
+        ]))
 
         # Format the template into a concrete message list so the structured
         # and free-text paths receive the same input. No bind_tools — the
         # data is already in the prompt.
-        formatted_messages = prompt.format_messages(messages=state["messages"])
+        formatted_messages = prompt.format_messages(messages=evidence_history(state["messages"]))
 
         report_text = invoke_structured_or_freetext(
             structured_llm,
@@ -136,55 +144,53 @@ def _build_system_message(
     stocktwits_block: str,
     reddit_block: str,
 ) -> str:
-    """Assemble the sentiment-analyst system message with structured data blocks."""
+    """Assemble trusted instructions only; source blocks are separate human evidence.
+
+    Source arguments remain accepted for compatibility with prompt callers.
+    """
     return f"""You are a financial market sentiment analyst. Your task is to produce a comprehensive sentiment report for {ticker} covering the period from {start_date} to {end_date}, drawing on three complementary data sources that have already been collected for you.
 
-## Data sources (pre-fetched, in this prompt)
+{UNTRUSTED_CONTENT_INSTRUCTION}
 
-### News headlines — Yahoo Finance, past 7 days
-Institutional framing. Fact-driven, slower-moving signal.
+## Data sources (pre-fetched, in separate evidence messages)
 
-<start_of_news>
-{news_block}
-<end_of_news>
+### News headlines — configured vendor, past 7 days
+Read publisher and retrieval-vendor provenance from the supplied evidence.
+{SHARED_NEWS_INSTRUCTION}
 
 ### StockTwits messages — retail-trader social platform indexed by cashtag
 Fast-moving signal. Each message carries a user-labeled sentiment tag (Bullish / Bearish / no-label) plus the message body.
 
-<start_of_stocktwits>
-{stocktwits_block}
-<end_of_stocktwits>
-
 ### Reddit posts — r/wallstreetbets, r/stocks, r/investing (past 7 days)
-Community discussion. Engagement signal via upvote score and comment count. Subreddit character matters (r/wallstreetbets is often contrarian/exuberant; r/stocks more measured; r/investing longer-term).
-
-<start_of_reddit>
-{reddit_block}
-<end_of_reddit>
+Community discussion from a bounded recent search sample. RSS does not supply upvote scores or comment counts; use engagement only when explicitly present.
 
 ## How to analyze this data (best practices)
 
-1. **Read the StockTwits Bullish/Bearish ratio as a leading retail-sentiment signal.** A 70/30 bullish/bearish split is moderately bullish; ≥90/10 may indicate over-extension and contrarian risk; 50/50 is uncertainty. Sample size matters — base rates on the actual message count, not percentages alone.
+1. **StockTwits percentages describe labeled posts only**, after duplicate and author controls. Report the labeled denominator and label coverage alongside the split. Unlabeled posts are not neutral or bearish votes; no labels means the ratio is unavailable. Self-selected labels from a bounded recent feed are not a population poll or a calibrated trading signal. Do not map fixed percentage thresholds to recommendations.
 
 2. **Look for cross-source divergences.** If news framing is bearish but StockTwits is overwhelmingly bullish, that mismatch is itself a signal — it can mean retail is leaning into a thesis the news flow hasn't caught up to (or vice versa, that retail is chasing while institutions are cautious).
 
-3. **Weight Reddit posts by engagement.** A 400-upvote / 200-comment thread reflects community attention; a 3-upvote post is noise. Read the body excerpts for context — the title alone often misleads.
+3. **Do not invent engagement.** Reddit RSS scores/comments are unavailable, not zero. When supplied, engagement measures attention, not truth, author independence, or investment quality. Do not dismiss low-engagement posts automatically. Read body excerpts for context.
 
-4. **Distinguish opinion from event.** A news headline ("Nvidia announces $500M Corning deal") is an event; a StockTwits post ("buying NVDA, this is going to moon") is opinion. Both are inputs but should be weighted differently in your conclusions.
+4. **Distinguish reported events from opinion.** Verify event claims against their provenance. Social predictions and enthusiasm are opinions, not established facts or forecasts of returns.
 
-5. **Identify recurring narrative themes.** What topic keeps coming up across sources? That's the dominant narrative driving current sentiment.
+5. **Check sample quality before interpreting repetition.** Cite retained counts, duplicate exclusions, author concentration, missing authors, and label coverage. Repeated or cross-posted text is not independent corroboration. The per-author cap reduces concentration but does not detect bots, coordinated accounts, or paraphrased campaigns; selection order can affect the result.
 
-6. **Be honest about data limits.** If StockTwits returned only a handful of messages, or one or more sources returned an "<unavailable>" placeholder, the sentiment read is less robust — flag this explicitly in the `confidence` field and the narrative. If the sources are silent on a given subreddit, say so.
+6. **Be honest about data limits.** Small or concentrated samples, low label coverage, missing engagement/author metadata, and unavailable sources weaken confidence: flag them in the `confidence` field and narrative. Account age, authenticity and bot-quality metrics have not been established. Missing matches in recent feeds do not establish historical silence. Sample counts describe the retrieved subset, not overall discussion volume.
 
 7. **Identify catalysts and risks** that emerge across sources — news of upcoming earnings, product launches, competitive threats, macro headlines, etc.
 
 8. **Past sentiment is not predictive.** Frame your conclusions as signal for the trader to weigh alongside fundamentals and technicals, not as a price call.
 
+## Fictional example — illustration only, not evidence
+
+ExampleCo is fictional: equally credible positive reports of customer enthusiasm and negative reports of service dissatisfaction, with no supported net direction, can justify Neutral with an explanation of the balance. If those sources instead support materially divergent conclusions, Mixed may be appropriate. Missing reports alone establish neither balance nor measured neutrality. Do not cite ExampleCo, copy this example into findings, or treat it as evidence about the analyzed instrument; assess only the supplied source data. This example implies no transaction or rating.
+
 ## Output fields
 
 Fill the following fields:
 
-- **overall_band**: Exactly one of Bullish / Mildly Bullish / Neutral / Mixed / Mildly Bearish / Bearish. Use Mixed when sources point in clearly different directions; Neutral only when all sources are genuinely silent.
+- **overall_band**: Exactly one of Bullish / Mildly Bullish / Neutral / Mixed / Mildly Bearish / Bearish. Use Mixed when sources point in clearly different directions. Use Neutral when substantive evidence supports no net directional sentiment, including balanced or non-directional findings. Missing data is not evidence of neutrality: if no supported direction can be assessed, use Neutral as an unassessed placeholder with low confidence and explicitly state insufficient evidence.
 - **overall_score**: A number from 0 (maximally bearish) to 10 (maximally bullish); 5 is neutral. Keep it consistent with overall_band.
 - **confidence**: low / medium / high, based on data quality and sample size.
 - **narrative**: Full source-by-source breakdown, divergences, dominant narrative themes, catalysts and risks, and a markdown summary table of key sentiment signals (direction, source, supporting evidence).

@@ -79,10 +79,10 @@ def test_as_of_excludes_lessons_resolved_after_the_run_date(tmp_path):
 
 
 @pytest.mark.unit
-def test_no_as_of_is_unfiltered_live_behavior(tmp_path):
+def test_no_scope_is_unfiltered_legacy_audit_behavior(tmp_path):
     log = _log(tmp_path)
     _resolve(log, "NVDA", "2026-01-05", "2026-01-10", "great trade")
-    # Live run (no as_of): unchanged behavior, lesson is shown.
+    # Unscoped audit API retains compatibility; runtime runs always pass a scope.
     assert "great trade" in log.get_past_context("NVDA")
 
 
@@ -104,7 +104,7 @@ def test_legacy_entry_without_resolution_date_excluded_in_backtest(tmp_path):
 
     # Conservative: excluded from a point-in-time query (can't prove it was known)...
     assert log.get_past_context("NVDA", as_of="2026-06-01") == ""
-    # ...but still available on a live (unfiltered) run.
+    # ...but still available via the unscoped legacy audit API.
     assert "legacy lesson" in log.get_past_context("NVDA")
 
 
@@ -118,9 +118,8 @@ def test_cross_ticker_lessons_are_also_gated(tmp_path):
 
 
 @pytest.mark.unit
-def test_memory_as_of_gates_historical_but_not_live():
-    # The graph filters only for a past trade date; a current-date run passes
-    # None so live behavior and legacy entries are unaffected (#1251).
+def test_memory_as_of_gates_all_runs():
+    # Historical, current, and future runs always have an explicit cutoff.
     from datetime import datetime, timedelta
 
     from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -130,5 +129,5 @@ def test_memory_as_of_gates_historical_but_not_live():
     today = datetime.now().strftime("%Y-%m-%d")
     future = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
     assert g._memory_as_of(past) == past       # backtest -> filter on the trade date
-    assert g._memory_as_of(today) is None      # live -> no filter
-    assert g._memory_as_of(future) is None     # future-dated run -> no filter
+    assert g._memory_as_of(today) == today
+    assert g._memory_as_of(future) == today    # cannot know outcomes beyond today

@@ -1,0 +1,2 @@
+# Preserve recorded evaluation artifacts byte-for-byte, including their hashes.
+evaluation_runs/** -text

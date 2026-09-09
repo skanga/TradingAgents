@@ -330,7 +330,10 @@ class SentimentReport(BaseModel):
             "Overall sentiment direction. Exactly one of: "
             "Bullish / Mildly Bullish / Neutral / Mixed / Mildly Bearish / Bearish. "
             "Use Mixed when sources point in clearly different directions. "
-            "Use Neutral only when all sources are genuinely silent or non-committal."
+            "Use Neutral when substantive evidence supports no net directional sentiment, including balanced "
+            "or non-directional findings. Missing data is not evidence of neutrality: when no supported direction "
+            "can be assessed, use Neutral as an unassessed placeholder with low confidence and explicitly "
+            "state insufficient evidence."
         ),
     )
     overall_score: float = Field(

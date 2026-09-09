@@ -1,0 +1,1 @@
+{"task_id": "2359213eb7fdc528bd8f9087a79dd0a9ebc895db24c51933808b205c2e8bae7a", "prompt_sha256": "8c2b877b3eefc132c8e7840dde1a37f857b49fd36cd0d2ae5cb8f37df6546410", "backend": {"provider": "openai", "model": "gpt-5.6-luna", "base_url": "http://127.0.0.1:10531", "max_retries": 0, "timeout": 60}, "error": "NotFoundError", "recorded_at": "2026-09-08T18:41:55.917811+00:00"}

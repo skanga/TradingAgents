@@ -1,0 +1,176 @@
+{
+  "provenance": "synthetic-deterministic-adapter-ablation",
+  "not_model_evaluation": true,
+  "baseline": "Same adapters with only near-match detection disabled; exact duplicate, author and date controls remain active.",
+  "stocktwits_input": [
+    {
+      "id": 0,
+      "created_at": "2024-01-10T12:00:00Z",
+      "body": "The company reported strong demand across its core products while management expects steady expansion into additional markets",
+      "user": {
+        "username": "user0"
+      },
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        }
+      }
+    },
+    {
+      "id": 1,
+      "created_at": "2024-01-10T12:00:00Z",
+      "body": "The company reported strong demand across its core products while management expects steady expansion into additional markets today",
+      "user": {
+        "username": "user1"
+      },
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "created_at": "2024-01-10T12:00:00Z",
+      "body": "The company reported strong demand across its core products while management expects steady expansion into additional markets again",
+      "user": {
+        "username": "user2"
+      },
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "created_at": "2024-01-10T12:00:00Z",
+      "body": "The company reported strong demand across its core products while management expects steady expansion into additional markets indeed",
+      "user": {
+        "username": "user3"
+      },
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "created_at": "2024-01-10T12:00:00Z",
+      "body": "The company reported strong demand across its core products while management expects steady expansion into additional markets clearly",
+      "user": {
+        "username": "user4"
+      },
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "created_at": "2024-01-10T12:00:00Z",
+      "body": "The company reported strong demand across its core products while management expects steady expansion into additional markets reportedly",
+      "user": {
+        "username": "user5"
+      },
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "created_at": "2024-01-10T12:00:00Z",
+      "body": "The company reported strong demand across its core products while management expects steady expansion into additional markets certainly",
+      "user": {
+        "username": "user6"
+      },
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        }
+      }
+    },
+    {
+      "id": 100,
+      "created_at": "2024-01-10T12:00:00Z",
+      "body": "The company reported strong demand across its core products while management expects steady expansion into additional markets sell",
+      "user": {
+        "username": "other"
+      },
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        }
+      }
+    }
+  ],
+  "reddit_input": [
+    [
+      {
+        "id": "0",
+        "author": "author0",
+        "title": "The company reported strong demand across its core products while management expects steady expansion into additional markets",
+        "selftext": "",
+        "created_utc": 1800000000,
+        "source": "rss"
+      },
+      {
+        "id": "1",
+        "author": "author1",
+        "title": "The company reported strong demand across its core products while management expects steady expansion into additional markets",
+        "selftext": "",
+        "created_utc": 1704888000,
+        "source": "rss"
+      }
+    ],
+    [
+      {
+        "id": "2",
+        "author": "author2",
+        "title": "The company reported strong demand across its core products while management expects steady expansion into additional markets today",
+        "selftext": "",
+        "created_utc": 1704888000,
+        "source": "rss"
+      },
+      {
+        "id": "3",
+        "author": "author3",
+        "title": "The company reported robust demand across its core products while management expects steady expansion into additional markets",
+        "selftext": "",
+        "created_utc": 1704888000,
+        "source": "rss"
+      },
+      {
+        "id": "4",
+        "author": "author4",
+        "title": "The company reported strong demand across its core products while management expects steady expansion into additional markets sell",
+        "selftext": "",
+        "created_utc": 1704888000,
+        "source": "rss"
+      }
+    ]
+  ],
+  "results": {
+    "near_control_disabled": {
+      "stocktwits_bullish_count": 7,
+      "stocktwits_labeled_count": 8,
+      "stocktwits_bullish_share": 0.875,
+      "reddit_retained": 4,
+      "stocktwits_rendered": "Bullish: 7 (88%) · Bearish: 1 (12%) — labeled posts only\nLabel coverage: 8/8 retained posts · Unlabeled: 0 · Total: 8 retained messages\nUser-selected labels are not a representative retail sentiment poll.\nSample quality (in-window candidates): observed: 8; retained: 8; duplicates removed: 0; near-duplicates removed: 0; near-duplicate screen/index limits: 0; author-cap exclusions: 0; limit exclusions: 0; empty text: 0; missing author: 0.\nKnown authors observed: 8; largest known-author share: 1/8 observed, 1/8 retained (counts, not population estimates). Per-author cap: 3.\nThis is not a representative sample; recency/search ranking and sample controls affect selection. Missing authors prevent full concentration checks; account independence and authenticity are unverified. Account age and bot-quality metrics have not been assessed. Repeated text is not independent corroboration. Near-duplicate screening uses conservative word/bigram overlap, protecting explicit numbers, cashtags and selected polarity/negation terms. It may miss paraphrases or merge distinct claims. Screening is limited to 8-128 tokens, 4000 characters and 300 canonical candidates; short/oversized text and index overflow retain exact-ID/text controls only.\nCoverage is limited to the retrieved recent feed, not a historical archive; missing matches do not establish an absence of discussion.\n\n[2024-01-10T12:00:00Z · @user0 · Bullish] The company reported strong demand across its core products while management expects steady expansion into additional markets\n[2024-01-10T12:00:00Z · @user1 · Bullish] The company reported strong demand across its core products while management expects steady expansion into additional markets today\n[2024-01-10T12:00:00Z · @user2 · Bullish] The company reported strong demand across its core products while management expects steady expansion into additional markets again\n[2024-01-10T12:00:00Z · @user3 · Bullish] The company reported strong demand across its core products while management expects steady expansion into additional markets indeed\n[2024-01-10T12:00:00Z · @user4 · Bullish] The company reported strong demand across its core products while management expects steady expansion into additional markets clearly\n[2024-01-10T12:00:00Z · @user5 · Bullish] The company reported strong demand across its core products while management expects steady expansion into additional markets reportedly\n[2024-01-10T12:00:00Z · @user6 · Bullish] The company reported strong demand across its core products while management expects steady expansion into additional markets certainly\n[2024-01-10T12:00:00Z · @other · Bearish] The company reported strong demand across its core products while management expects steady expansion into additional markets sell",
+      "reddit_rendered": "Sample quality (in-window candidates): observed: 4; retained: 4; duplicates removed: 0; near-duplicates removed: 0; near-duplicate screen/index limits: 0; author-cap exclusions: 0; limit exclusions: 0; empty text: 0; missing author: 0.\nKnown authors observed: 4; largest known-author share: 1/4 observed, 1/4 retained (counts, not population estimates). Per-author cap: 3.\nThis is not a representative sample; recency/search ranking and sample controls affect selection. Missing authors prevent full concentration checks; account independence and authenticity are unverified. Account age and bot-quality metrics have not been assessed. Repeated text is not independent corroboration. Near-duplicate screening uses conservative word/bigram overlap, protecting explicit numbers, cashtags and selected polarity/negation terms. It may miss paraphrases or merge distinct claims. Screening is limited to 8-128 tokens, 4000 characters and 300 canonical candidates; short/oversized text and index overflow retain exact-ID/text controls only.\nCoverage is limited to the retrieved recent feed, not a historical archive; missing matches do not establish an absence of discussion.\n\nr/stocks — 1 recent posts mentioning AAPL (via RSS feed; scores/comments unavailable):\n  [2024-01-10 · author: author1 · scores/comments unavailable] The company reported strong demand across its core products while management expects steady expansion into additional markets\n\nr/investing — 3 recent posts mentioning AAPL (via RSS feed; scores/comments unavailable):\n  [2024-01-10 · author: author2 · scores/comments unavailable] The company reported strong demand across its core products while management expects steady expansion into additional markets today\n  [2024-01-10 · author: author3 · scores/comments unavailable] The company reported robust demand across its core products while management expects steady expansion into additional markets\n  [2024-01-10 · author: author4 · scores/comments unavailable] The company reported strong demand across its core products while management expects steady expansion into additional markets sell"
+    },
+    "near_control_enabled": {
+      "stocktwits_bullish_count": 1,
+      "stocktwits_labeled_count": 2,
+      "stocktwits_bullish_share": 0.5,
+      "reddit_retained": 2,
+      "stocktwits_rendered": "Bullish: 1 (50%) · Bearish: 1 (50%) — labeled posts only\nLabel coverage: 2/2 retained posts · Unlabeled: 0 · Total: 2 retained messages\nUser-selected labels are not a representative retail sentiment poll.\nSample quality (in-window candidates): observed: 8; retained: 2; duplicates removed: 6; near-duplicates removed: 6; near-duplicate screen/index limits: 0; author-cap exclusions: 0; limit exclusions: 0; empty text: 0; missing author: 0.\nKnown authors observed: 8; largest known-author share: 1/8 observed, 1/2 retained (counts, not population estimates). Per-author cap: 3.\nThis is not a representative sample; recency/search ranking and sample controls affect selection. Missing authors prevent full concentration checks; account independence and authenticity are unverified. Account age and bot-quality metrics have not been assessed. Repeated text is not independent corroboration. Near-duplicate screening uses conservative word/bigram overlap, protecting explicit numbers, cashtags and selected polarity/negation terms. It may miss paraphrases or merge distinct claims. Screening is limited to 8-128 tokens, 4000 characters and 300 canonical candidates; short/oversized text and index overflow retain exact-ID/text controls only.\nCoverage is limited to the retrieved recent feed, not a historical archive; missing matches do not establish an absence of discussion.\n\n[2024-01-10T12:00:00Z · @user0 · Bullish] The company reported strong demand across its core products while management expects steady expansion into additional markets\n[2024-01-10T12:00:00Z · @other · Bearish] The company reported strong demand across its core products while management expects steady expansion into additional markets sell",
+      "reddit_rendered": "Sample quality (in-window candidates): observed: 4; retained: 2; duplicates removed: 2; near-duplicates removed: 2; near-duplicate screen/index limits: 0; author-cap exclusions: 0; limit exclusions: 0; empty text: 0; missing author: 0.\nKnown authors observed: 4; largest known-author share: 1/4 observed, 1/2 retained (counts, not population estimates). Per-author cap: 3.\nThis is not a representative sample; recency/search ranking and sample controls affect selection. Missing authors prevent full concentration checks; account independence and authenticity are unverified. Account age and bot-quality metrics have not been assessed. Repeated text is not independent corroboration. Near-duplicate screening uses conservative word/bigram overlap, protecting explicit numbers, cashtags and selected polarity/negation terms. It may miss paraphrases or merge distinct claims. Screening is limited to 8-128 tokens, 4000 characters and 300 canonical candidates; short/oversized text and index overflow retain exact-ID/text controls only.\nCoverage is limited to the retrieved recent feed, not a historical archive; missing matches do not establish an absence of discussion.\n\nr/stocks — 1 recent posts mentioning AAPL (via RSS feed; scores/comments unavailable):\n  [2024-01-10 · author: author1 · scores/comments unavailable] The company reported strong demand across its core products while management expects steady expansion into additional markets\n\nr/investing — 1 recent posts mentioning AAPL (via RSS feed; scores/comments unavailable):\n  [2024-01-10 · author: author4 · scores/comments unavailable] The company reported strong demand across its core products while management expects steady expansion into additional markets sell"
+    }
+  },
+  "limitations": "Small hand-authored minor-edit floods; effect on retained evidence and label denominators, not population sentiment accuracy, calibrated bot detection or semantic immunity."
+}

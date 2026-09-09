@@ -1,14 +1,52 @@
 """Append-only markdown decision log for TradingAgents."""
 
-from typing import List, Optional
-from pathlib import Path
 import json
+import logging
 import re
 import tempfile
 import threading
 import weakref
+from collections import Counter
+from copy import deepcopy
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional
 
-from tradingagents.agents.utils.rating import parse_rating
+from tradingagents.agents.utils.outcomes import format_outcome, score_outcome
+from tradingagents.agents.utils.rating import RATING_REVIEW, extract_rating, parse_actionable_rating
+
+logger = logging.getLogger(__name__)
+
+
+def _valid_learning_entry(entry: dict) -> bool:
+    decision = entry.get("decision", "")
+    rating = parse_actionable_rating(decision)
+    # Older logs used imperative prose ("Buy NVDA.") rather than a label.
+    # Retain these only when the initial rating agrees with the stored tag.
+    if rating == RATING_REVIEW and not re.search(r"\brating\b", decision, re.IGNORECASE):
+        if re.match(r"^(Buy|Overweight|Hold|Underweight|Sell)\s+", decision, re.IGNORECASE):
+            words = re.findall(r"\b(Buy|Overweight|Hold|Underweight|Sell)\b", decision, re.IGNORECASE)
+            if len({word.lower() for word in words}) == 1:
+                rating = extract_rating(decision)
+    return rating != RATING_REVIEW and rating == entry.get("rating")
+
+
+def _namespace(value: str) -> str:
+    if value not in ("live", "simulation", "legacy"):
+        raise ValueError("memory namespace must be live, simulation, or legacy")
+    return value
+
+
+def outcome_known_by(entry: dict, as_of: str) -> bool:
+    """Require valid decision/outcome dates ordered within the run cutoff."""
+    dates = (entry.get("date"), entry.get("resolution_date"))
+    try:
+        for value in dates:
+            if datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d") != value:
+                return False
+    except (TypeError, ValueError):
+        return False
+    return dates[0] <= dates[1] <= as_of
 
 
 class TradingMemoryLog:
@@ -16,7 +54,7 @@ class TradingMemoryLog:
 
     # HTML comment: cannot appear in LLM prose output, safe as a hard delimiter
     _SEPARATOR = "\n\n<!-- ENTRY_END -->\n\n"
-    _JSONL_VERSION = 1
+    _JSONL_VERSION = 2
     # Precompiled patterns — avoids re-compilation on every load_entries() call
     _DECISION_RE = re.compile(r"DECISION:\n(.*?)(?=\nREFLECTION:|\Z)", re.DOTALL)
     _REFLECTION_RE = re.compile(r"REFLECTION:\n(.*?)$", re.DOTALL)
@@ -44,21 +82,29 @@ class TradingMemoryLog:
         ticker: str,
         trade_date: str,
         final_trade_decision: str,
+        *, namespace: str = "legacy",
     ) -> None:
-        """Append pending entry at end of propagate(). No LLM call."""
+        """Append a namespaced pending entry. Unscoped callers remain legacy."""
+        namespace = _namespace(namespace)
         if not self._log_path:
+            return
+        rating = parse_actionable_rating(final_trade_decision)
+        if rating == RATING_REVIEW:
+            logger.warning("Not storing invalid decision for %s on %s: REVIEW", ticker, trade_date)
             return
         with self._path_lock():
             entries = self._read_entries_uncached()
             for entry in entries:
                 if (
-                    entry["date"] == trade_date
+                    entry.get("namespace", "legacy") == namespace
+                    and entry["date"] == trade_date
                     and entry["ticker"] == ticker
                     and entry.get("pending")
+                    and _valid_learning_entry(entry)
                 ):
                     return
-            rating = parse_rating(final_trade_decision)
             entries.append({
+                "namespace": namespace,
                 "date": trade_date,
                 "ticker": ticker,
                 "rating": rating,
@@ -84,24 +130,35 @@ class TradingMemoryLog:
             self._entries_cache is not None
             and self._entries_cache_mtime_ns == mtime_ns
         ):
-            return [entry.copy() for entry in self._entries_cache]
+            return deepcopy(self._entries_cache)
 
         entries = self._read_entries_uncached()
         self._entries_cache_mtime_ns = mtime_ns
-        self._entries_cache = [entry.copy() for entry in entries]
+        self._entries_cache = deepcopy(entries)
         return entries
 
-    def get_pending_entries(self) -> List[dict]:
-        """Return entries with outcome:pending (for Phase B)."""
-        return [e for e in self.load_entries() if e.get("pending")]
+    def get_pending_entries(self, *, namespace: str | None = None) -> List[dict]:
+        """Return pending entries; unscoped calls are for legacy/audit clients."""
+        if namespace is not None:
+            _namespace(namespace)
+        return [e for e in self.load_entries() if e.get("pending") and _valid_learning_entry(e)
+                and (namespace is None or e.get("namespace", "legacy") == namespace)]
 
     def get_past_context(self, ticker: str, n_same: int = 5, n_cross: int = 3,
-                         as_of: str | None = None) -> str:
-        """Return formatted past context string for agent prompt injection."""
+                         as_of: str | None = None, *, namespace: str | None = None) -> str:
+        """Run queries require a namespace and cutoff; unscoped reads are legacy/audit."""
+        if namespace is not None:
+            _namespace(namespace)
+            if as_of is None:
+                raise ValueError("Namespaced memory context requires as_of")
+        if as_of is not None:
+            if datetime.strptime(as_of, "%Y-%m-%d").strftime("%Y-%m-%d") != as_of:
+                raise ValueError("as_of must use YYYY-MM-DD")
         entries = [
             e for e in self.load_entries()
-            if not e.get("pending")
-            and (as_of is None or (e.get("resolution_date") and e["resolution_date"] <= as_of))
+            if not e.get("pending") and _valid_learning_entry(e)
+            and (namespace is None or e.get("namespace", "legacy") == namespace)
+            and (as_of is None or outcome_known_by(e, as_of))
         ]
         if not entries:
             return ""
@@ -130,10 +187,11 @@ class TradingMemoryLog:
 
     def format_entry(self, entry: dict) -> str:
         """Return a human-readable markdown view of a parsed memory entry."""
+        scope = f"Memory namespace: {entry.get('namespace', 'legacy')}\n\n"
         if not entry.get("pending"):
-            return self._format_full(entry)
+            return scope + self._format_full(entry)
         tag = f"[{entry['date']} | {entry['ticker']} | {entry['rating']} | pending]"
-        return "\n\n".join([tag, f"DECISION:\n{entry.get('decision', '')}"])
+        return scope + "\n\n".join([tag, f"DECISION:\n{entry.get('decision', '')}"])
 
     # --- Update path (Phase B) ---
 
@@ -151,26 +209,35 @@ class TradingMemoryLog:
 
             update_map = {}
             for update in updates:
-                key = (update["trade_date"], update["ticker"])
+                key = (_namespace(update.get("namespace", "legacy")), update["trade_date"], update["ticker"])
                 if key in update_map:
                     raise ValueError(
-                        f"duplicate outcome update for trade_date={key[0]!r}, ticker={key[1]!r}"
+                        f"duplicate outcome update for namespace={key[0]!r}, trade_date={key[1]!r}, ticker={key[2]!r}"
                     )
                 update_map[key] = update
 
             updated_entries = []
             for entry in entries:
-                if not entry.get("pending"):
+                if not entry.get("pending") or not _valid_learning_entry(entry):
                     updated_entries.append(entry)
                     continue
 
-                upd = update_map.get((entry["date"], entry["ticker"]))
+                key = (entry.get("namespace", "legacy"), entry["date"], entry["ticker"])
+                upd = update_map.get(key)
                 if upd is None:
                     updated_entries.append(entry)
                     continue
 
+                outcome = score_outcome(entry["rating"], upd["raw_return"], upd["alpha_return"])
+                outcome.update({
+                    "evaluation_sessions": upd["holding_days"],
+                    "evaluation_start": upd.get("evaluation_start"),
+                    "benchmark_name": upd.get("benchmark_name"),
+                    "resolution_date": upd.get("resolution_date"),
+                })
                 entry = entry.copy()
                 entry.update({
+                    "outcome": outcome,
                     "pending": False,
                     "raw": f"{upd['raw_return']:+.1%}",
                     "alpha": f"{upd['alpha_return']:+.1%}",
@@ -179,7 +246,7 @@ class TradingMemoryLog:
                     "resolution_date": upd.get("resolution_date"),
                 })
                 updated_entries.append(entry)
-                del update_map[(entry["date"], entry["ticker"])]
+                del update_map[key]
 
             updated_entries = self._apply_rotation_entries(updated_entries)
             self._atomic_write_text(self._serialize_jsonl(updated_entries))
@@ -220,6 +287,7 @@ class TradingMemoryLog:
         for entry in entries:
             payload = {
                 "version": self._JSONL_VERSION,
+                "namespace": entry.get("namespace", "legacy"),
                 "date": entry["date"],
                 "ticker": entry["ticker"],
                 "rating": entry["rating"],
@@ -230,6 +298,7 @@ class TradingMemoryLog:
                 "decision": entry.get("decision", ""),
                 "reflection": entry.get("reflection", ""),
                 "resolution_date": entry.get("resolution_date"),
+                "outcome": entry.get("outcome"),
             }
             lines.append(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
         return "\n".join(lines) + ("\n" if lines else "")
@@ -247,6 +316,7 @@ class TradingMemoryLog:
             return None
 
         return {
+            "namespace": payload.get("namespace", "legacy"),
             "date": str(payload["date"]),
             "ticker": str(payload["ticker"]),
             "rating": str(payload["rating"]),
@@ -257,6 +327,7 @@ class TradingMemoryLog:
             "decision": str(payload.get("decision", "")),
             "reflection": str(payload.get("reflection", "")),
             "resolution_date": payload.get("resolution_date"),
+            "outcome": payload.get("outcome"),
         }
 
     def _path_lock(self) -> threading.Lock:
@@ -295,7 +366,7 @@ class TradingMemoryLog:
                 tmp_path.unlink()
 
     def _apply_rotation_entries(self, entries: List[dict]) -> List[dict]:
-        """Drop oldest resolved entries when their count exceeds max_entries.
+        """Drop oldest resolved entries per namespace when count exceeds max_entries.
 
         Pending entries are always kept (they represent unprocessed work).
         Returns ``entries`` unchanged when rotation is disabled or under cap.
@@ -303,15 +374,15 @@ class TradingMemoryLog:
         if not self._max_entries or self._max_entries <= 0:
             return entries
 
-        resolved_count = sum(1 for entry in entries if not entry.get("pending"))
-        if resolved_count <= self._max_entries:
-            return entries
-
-        to_drop = resolved_count - self._max_entries
+        resolved_counts = Counter(entry.get("namespace", "legacy") for entry in entries
+                                  if not entry.get("pending"))
+        to_drop = {namespace: max(0, count - self._max_entries)
+                   for namespace, count in resolved_counts.items()}
         kept: List[dict] = []
         for entry in entries:
-            if not entry.get("pending") and to_drop > 0:
-                to_drop -= 1
+            namespace = entry.get("namespace", "legacy")
+            if not entry.get("pending") and to_drop.get(namespace, 0) > 0:
+                to_drop[namespace] -= 1
                 continue
             kept.append(entry)
         return kept
@@ -327,6 +398,7 @@ class TradingMemoryLog:
         if not fields:
             return None
         entry = {
+            "namespace": "legacy",
             "date": fields["date"],
             "ticker": fields["ticker"],
             "rating": fields["rating"],
@@ -385,12 +457,16 @@ class TradingMemoryLog:
         holding = e["holding"] or "n/a"
         tag = f"[{e['date']} | {e['ticker']} | {e['rating']} | {raw} | {alpha} | {holding}]"
         parts = [tag, f"DECISION:\n{e['decision']}"]
+        if e.get("outcome"):
+            parts.append(format_outcome(e["outcome"]))
         if e["reflection"]:
             parts.append(f"REFLECTION:\n{e['reflection']}")
         return "\n\n".join(parts)
 
     def _format_reflection_only(self, e: dict) -> str:
         tag = f"[{e['date']} | {e['ticker']} | {e['rating']} | {e['raw'] or 'n/a'}]"
+        if e.get("outcome"):
+            tag += "\n" + format_outcome(e["outcome"])
         if e["reflection"]:
             return f"{tag}\n{e['reflection']}"
         text = e["decision"][:300]

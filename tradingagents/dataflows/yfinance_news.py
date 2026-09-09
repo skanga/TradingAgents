@@ -8,6 +8,8 @@ from dateutil.relativedelta import relativedelta
 
 from .config import get_config
 from .date_window import in_window
+from .errors import VendorError
+from .news_evidence import YAHOO_COVERAGE_NOTICE, evidence_id, render_article
 from .stockstats_utils import yf_retry
 from .symbol_utils import normalize_symbol
 
@@ -87,7 +89,7 @@ def get_news_yfinance(
         news = yf_retry(lambda: stock.get_news(count=article_limit))
 
         if not news:
-            return f"No news found for {ticker}{resolved}"
+            return f"No news found in the retrieved feed for {ticker}{resolved}. {YAHOO_COVERAGE_NOTICE}"
 
         # Parse date range for filtering
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -95,6 +97,7 @@ def get_news_yfinance(
 
         news_str = ""
         filtered_count = 0
+        seen_ids = set()
 
         for article in news:
             data = _extract_article_data(article)
@@ -103,21 +106,20 @@ def get_news_yfinance(
             if not in_window(data["pub_date"], start_dt, end_dt):
                 continue
 
-            news_str += f"### {data['title']} (source: {data['publisher']})\n"
-            if data["summary"]:
-                news_str += f"{data['summary']}\n"
-            if data["link"]:
-                news_str += f"Link: {data['link']}\n"
-            news_str += "\n"
+            identity = evidence_id(data)
+            if identity in seen_ids:
+                continue
+            seen_ids.add(identity)
+            news_str += render_article(data, "yfinance")
             filtered_count += 1
 
         if filtered_count == 0:
-            return f"No news found for {ticker}{resolved} between {start_date} and {end_date}"
+            return f"No news found in the retrieved feed for {ticker}{resolved} between {start_date} and {end_date}. {YAHOO_COVERAGE_NOTICE}"
 
-        return f"## {ticker}{resolved} News, from {start_date} to {end_date}:\n\n{news_str}"
+        return f"## {ticker}{resolved} News, from {start_date} to {end_date}:\n\n{YAHOO_COVERAGE_NOTICE}\n\n{news_str}"
 
     except Exception as e:
-        return f"Error fetching news for {ticker}: {str(e)}"
+        raise VendorError(f"Yahoo ticker news retrieval failed for {ticker}: {e}") from e
 
 
 def get_global_news_yfinance(
@@ -146,7 +148,7 @@ def get_global_news_yfinance(
     search_queries = config["global_news_queries"]
 
     all_news = []
-    seen_titles = set()
+    seen_ids = set()
 
     try:
         candidate_limit = max(limit * 3, 10)
@@ -159,23 +161,19 @@ def get_global_news_yfinance(
 
             if search.news:
                 for article in search.news:
-                    # Handle both flat and nested structures
-                    if "content" in article:
-                        data = _extract_article_data(article)
-                        title = data["title"]
-                    else:
-                        title = article.get("title", "")
-
-                    # Deduplicate by title
-                    if title and title not in seen_titles:
-                        seen_titles.add(title)
+                    data = _extract_article_data(article)
+                    # Do not let an out-of-window revision hide an older version
+                    # of the same URL before publication-date filtering.
+                    identity = (evidence_id(data), data["pub_date"])
+                    if identity not in seen_ids:
+                        seen_ids.add(identity)
                         all_news.append(article)
 
             if len(all_news) >= candidate_limit:
                 break
 
         if not all_news:
-            return f"No global news found for {curr_date}"
+            return f"No global news found in the retrieved feed for {curr_date}. {YAHOO_COVERAGE_NOTICE}"
 
         # Calculate date range
         curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
@@ -185,6 +183,7 @@ def get_global_news_yfinance(
         news_str = ""
         kept = 0
         undated_excluded = 0
+        rendered_ids = set()
         for article in all_news:
             if kept >= limit:
                 break
@@ -195,12 +194,11 @@ def get_global_news_yfinance(
                 if data["pub_date"] is None:
                     undated_excluded += 1
                 continue
-            news_str += f"### {data['title']} (source: {data['publisher']})\n"
-            if data["summary"]:
-                news_str += f"{data['summary']}\n"
-            if data["link"]:
-                news_str += f"Link: {data['link']}\n"
-            news_str += "\n"
+            identity = evidence_id(data)
+            if identity in rendered_ids:
+                continue
+            rendered_ids.add(identity)
+            news_str += render_article(data, "yfinance")
             kept += 1
 
         if undated_excluded:
@@ -213,9 +211,9 @@ def get_global_news_yfinance(
         # All candidates fell outside the window -> say so rather than return an
         # empty-bodied report (#993).
         if kept == 0:
-            return f"No global news found between {start_date} and {curr_date}"
+            return f"No global news found in the retrieved feed between {start_date} and {curr_date}. {YAHOO_COVERAGE_NOTICE}"
 
-        return f"## Global Market News, from {start_date} to {curr_date}:\n\n{news_str}"
+        return f"## Global Market News, from {start_date} to {curr_date}:\n\n{YAHOO_COVERAGE_NOTICE}\n\n{news_str}"
 
     except Exception as e:
-        return f"Error fetching global news: {str(e)}"
+        raise VendorError(f"Yahoo global news retrieval failed: {e}") from e

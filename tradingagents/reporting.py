@@ -1,6 +1,7 @@
 """Reusable Markdown report-tree writer for CLI and programmatic runs."""
 
 from datetime import datetime
+import json
 from pathlib import Path
 
 
@@ -85,13 +86,25 @@ def write_report_tree(
             f"## V. Portfolio Manager Decision\n\n### Portfolio Manager\n{portfolio_decision}"
         )
 
+    review_notice = ""
+    if review := final_state.get("decision_review"):
+        portfolio_dir = save_path / "5_portfolio"
+        portfolio_dir.mkdir(exist_ok=True)
+        (portfolio_dir / "decision_review.json").write_text(
+            json.dumps(review, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        review_notice = (
+            "**Human approval required — REVIEW.** All embedded plans are unapproved proposals, "
+            "not authorized trades. See `5_portfolio/decision_review.json` for the frozen audit.\n\n"
+        )
+
     header = (
         f"# Trading Analysis Report: {ticker}\n\n"
         f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     )
     output = save_path / "complete_report.md"
     output.write_text(
-        header + _metadata_block(report_metadata) + "\n\n".join(sections),
+        header + review_notice + _metadata_block(report_metadata) + "\n\n".join(sections),
         encoding="utf-8",
     )
     return output

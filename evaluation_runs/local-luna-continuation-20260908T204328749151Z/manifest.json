@@ -1,0 +1,19 @@
+{
+  "backend": {
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "base_url": "http://127.0.0.1:10531/v1",
+    "timeout": 300,
+    "max_retries": 0
+  },
+  "evidence_provenance": "synthetic",
+  "response_provenance": "live-local-endpoint",
+  "approved_new_attempts": 45,
+  "prior_generation_attempts": 3,
+  "original_budget": 48,
+  "reused_response_source": "evaluation_runs\\local-luna-300s-20260908T202840084159Z\\responses.jsonl",
+  "reused_response_file_sha256": "88c0545e02cfe292a3f32fdba49c81898fdebde7158f9e919619b5cc59b9e76e",
+  "frozen_plan_source": "evaluation_runs\\local-luna-v1-20260908T184331943538Z",
+  "started_at": "2026-09-08T20:43:28.749539+00:00",
+  "note": "Manual continuation. Reuse the original successful record unchanged; never request it again. Stop after 45 new attempts or first transport error. Earlier failed endpoint/timeout runs are excluded from paired metrics."
+}

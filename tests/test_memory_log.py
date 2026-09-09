@@ -365,7 +365,8 @@ class TestTradingMemoryLogCore:
         log.store_decision("NVDA", "2026-01-10", DECISION_BUY)
         text = (tmp_path / "trading_memory.md").read_text(encoding="utf-8")
         payload = json.loads(text)
-        assert payload["version"] == 1
+        assert payload["version"] == 2
+        assert payload["namespace"] == "legacy"
         assert payload["date"] == "2026-01-10"
         assert payload["ticker"] == "NVDA"
         assert payload["rating"] == "Buy"
@@ -383,10 +384,10 @@ class TestTradingMemoryLogCore:
         log.store_decision("AAPL", "2026-01-11", DECISION_OVERWEIGHT)
         assert log.load_entries()[0]["rating"] == "Overweight"
 
-    def test_rating_fallback_hold(self, tmp_path):
+    def test_invalid_rating_is_not_stored(self, tmp_path):
         log = make_log(tmp_path)
         log.store_decision("MSFT", "2026-01-12", DECISION_NO_RATING)
-        assert log.load_entries()[0]["rating"] == "Hold"
+        assert log.load_entries() == []
 
     def test_rating_priority_over_prose(self, tmp_path):
         """'Rating: X' label wins even when an opposing rating word appears earlier in prose."""
@@ -434,8 +435,8 @@ class TestTradingMemoryLogCore:
         log.store_decision("AAPL", "2026-01-11", DECISION_OVERWEIGHT)
         log.store_decision("MSFT", "2026-01-12", DECISION_NO_RATING)
         entries = log.load_entries()
-        assert len(entries) == 3
-        assert [e["ticker"] for e in entries] == ["NVDA", "AAPL", "MSFT"]
+        assert len(entries) == 2
+        assert [e["ticker"] for e in entries] == ["NVDA", "AAPL"]
 
     def test_decision_content_preserved(self, tmp_path):
         log = make_log(tmp_path)
@@ -995,6 +996,7 @@ class TestDeferredReflection:
         mock_graph = MagicMock(spec=TradingAgentsGraph)
         mock_graph.memory_log = log
         mock_graph.reflector = mock_reflector
+        mock_graph._resolve_benchmark.return_value = "SPY"
         mock_graph._fetch_returns = MagicMock(return_value=(0.05, 0.02, 5, "2026-01-12"))
         TradingAgentsGraph._resolve_pending_entries(mock_graph, "NVDA")
         assert log.get_pending_entries() == []

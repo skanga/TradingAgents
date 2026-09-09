@@ -39,6 +39,8 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 from langchain_core.messages import AIMessage
 
+from tradingagents.dataflows.news_evidence import news_run_scope
+
 
 def _utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -210,6 +212,7 @@ def _emit_chunk(chunk: Dict[str, Any], prev_seen: Dict[str, str]) -> None:
             emit({"type": "chunk", "role": role, "content": str(content)[:4000]})
 
 
+@news_run_scope()
 def run(job: Dict[str, Any]) -> None:
     ticker = job["ticker"]
     trade_date = job["trade_date"]
@@ -229,7 +232,7 @@ def run(job: Dict[str, Any]) -> None:
     config = DEFAULT_CONFIG.copy()
     for k in ("llm_provider", "deep_think_llm", "quick_think_llm",
               "max_debate_rounds", "max_risk_discuss_rounds",
-              "checkpoint_enabled", "output_language"):
+              "checkpoint_enabled", "output_language", "memory_namespace"):
         if k in job and job[k] is not None:
             config[k] = job[k]
     if job.get("data_vendors"):
@@ -265,12 +268,9 @@ def run(job: Dict[str, Any]) -> None:
     # We replicate ``_run_graph`` here so we can iterate ``graph.stream`` and
     # emit chunk events as nodes complete. The original ``debug=True`` path
     # only pretty-prints to stdout — we want structured events.
-    past_context = ta.memory_log.get_past_context(ticker)
+    past_context, memory_namespace = ta.prepare_memory(ticker, trade_date)
     init_state = ta.propagator.create_initial_state(ticker, trade_date, past_context=past_context)
     args = ta.propagator.get_graph_args()
-
-    # Resolve any prior pending entries before the run (same as ta.propagate does).
-    ta._resolve_pending_entries(ticker)
 
     final_state: Optional[Dict[str, Any]] = None
     prev_seen: Dict[str, str] = {}
@@ -354,7 +354,7 @@ def run(job: Dict[str, Any]) -> None:
 
     decision_text = final_state.get("final_trade_decision", "")
     ta.memory_log.store_decision(ticker=ticker, trade_date=trade_date,
-                                 final_trade_decision=decision_text)
+                                 final_trade_decision=decision_text, namespace=memory_namespace)
 
     decision = ta.process_signal(decision_text)
 

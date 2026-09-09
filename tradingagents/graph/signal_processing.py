@@ -3,8 +3,8 @@
 The Portfolio Manager produces a typed ``PortfolioDecision`` via structured
 output and renders it to markdown that always carries a ``**Rating**: X``
 header (see :func:`tradingagents.agents.schemas.render_pm_decision`).  The
-deterministic heuristic in :mod:`tradingagents.agents.utils.rating` is more
-than sufficient to extract that rating; no extra LLM call is needed.
+strict parser in :mod:`tradingagents.agents.utils.rating` extracts that rating
+and rejects ambiguous free-text fallbacks; no extra LLM call is needed.
 
 This module exists for backwards compatibility with callers that expect a
 ``SignalProcessor.process_signal(text)`` interface.
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tradingagents.agents.utils.rating import RATING_REVIEW, extract_rating
+from tradingagents.agents.utils.rating import parse_actionable_rating
 
 
 class SignalProcessor:
@@ -34,5 +34,4 @@ class SignalProcessor:
         tradeable neutral signal (#1170). Consumers that map the result onto the
         5-tier enum should guard with :func:`~tradingagents.agents.utils.rating.is_review`.
         """
-        rating = extract_rating(full_signal)
-        return rating if rating is not None else RATING_REVIEW
+        return parse_actionable_rating(full_signal)

@@ -1,3 +1,7 @@
+from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
+from tradingagents.agents.utils.response_integrity import invoke_complete_text
+from tradingagents.agents.utils.debate_evidence import DEBATE_EVIDENCE_INSTRUCTION
+from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block
 from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
@@ -37,21 +41,24 @@ Key points to focus on:
 - Bull Counterpoints: Critically analyze the bull argument with specific data and sound reasoning, exposing weaknesses or over-optimistic assumptions.
 - Engagement: Present your argument in a conversational style, directly engaging with the bull analyst's points and debating effectively rather than simply listing facts.
 
+{UNTRUSTED_CONTENT_INSTRUCTION}
+{SHARED_NEWS_INSTRUCTION}
+
 Resources available:
 
-{instrument_context}
-Market research report: {market_research_report}
-Social media sentiment report: {sentiment_report}
-Latest world affairs news: {news_report}
-{fundamentals_label}: {fundamentals_report}
-Conversation history of the debate: {history}
-Last bull argument: {current_response}
+{evidence_block(instrument_context)}
+Market research report: {evidence_block(market_research_report)}
+Social media sentiment report: {evidence_block(sentiment_report)}
+Latest world affairs news: {evidence_block(news_report)}
+{fundamentals_label}: {evidence_block(fundamentals_report)}
+Conversation history of the debate: {evidence_block(history)}
+Last bull argument: {evidence_block(current_response)}
 Use this information to deliver a compelling bear argument, refute the bull's claims, and engage in a dynamic debate that demonstrates the risks and weaknesses of investing in the {target_label}.
-""" + get_language_instruction()
+""" + DEBATE_EVIDENCE_INSTRUCTION + get_language_instruction()
 
-        response = llm.invoke(prompt)
+        response = invoke_complete_text(llm, prompt)
 
-        argument = f"Bear Analyst: {response.content}"
+        argument = f"Bear Analyst: {response}"
 
         new_investment_debate_state = {
             "history": history + "\n" + argument,

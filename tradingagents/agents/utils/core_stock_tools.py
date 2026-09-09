@@ -3,6 +3,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 
 from tradingagents.dataflows.interface import route_to_vendor
+from tradingagents.agents.utils.tool_dates import RunState, bounded_range
 
 
 @tool
@@ -10,6 +11,7 @@ def get_stock_data(
     symbol: Annotated[str, "ticker symbol of the company"],
     start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
     end_date: Annotated[str, "End date in yyyy-mm-dd format"],
+    state: RunState = None,
 ) -> str:
     """
     Retrieve stock price data (OHLCV) for a given ticker symbol.
@@ -21,4 +23,5 @@ def get_stock_data(
     Returns:
         str: A formatted dataframe containing the stock price data for the specified ticker symbol in the specified date range.
     """
+    start_date, end_date = bounded_range(start_date, end_date, state)
     return route_to_vendor("get_stock_data", symbol, start_date, end_date)

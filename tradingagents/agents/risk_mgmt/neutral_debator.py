@@ -1,3 +1,7 @@
+from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
+from tradingagents.agents.utils.response_integrity import invoke_complete_text
+from tradingagents.agents.utils.debate_evidence import DEBATE_EVIDENCE_INSTRUCTION
+from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block
 from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
@@ -28,22 +32,22 @@ def create_neutral_debator(llm):
 
         prompt = f"""As the Neutral Risk Analyst, your role is to provide a balanced perspective, weighing both the potential benefits and risks of the trader's decision or plan. You prioritize a well-rounded approach, evaluating the upsides and downsides while factoring in broader market trends, potential economic shifts, and diversification strategies.Here is the trader's decision:
 
-{trader_decision}
+{evidence_block(trader_decision)}
 
 Your task is to challenge both the Aggressive and Conservative Analysts, pointing out where each perspective may be overly optimistic or overly cautious. Use insights from the following data sources to support a moderate, sustainable strategy to adjust the trader's decision:
 
-{instrument_context}
-Market Research Report: {market_research_report}
-Social Media Sentiment Report: {sentiment_report}
-Latest World Affairs Report: {news_report}
-Company Fundamentals Report: {fundamentals_report}
-Here is the current conversation history: {history} Here is the last response from the aggressive analyst: {current_aggressive_response} Here is the last response from the conservative analyst: {current_conservative_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
+{evidence_block(instrument_context)}
+Market Research Report: {evidence_block(market_research_report)}
+Social Media Sentiment Report: {evidence_block(sentiment_report)}
+Latest World Affairs Report: {evidence_block(news_report)}
+Company Fundamentals Report: {evidence_block(fundamentals_report)}
+Here is the current conversation history: {evidence_block(history)} Here is the last response from the aggressive analyst: {evidence_block(current_aggressive_response)} Here is the last response from the conservative analyst: {evidence_block(current_conservative_response)}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
 
-Engage actively by analyzing both sides critically, addressing weaknesses in the aggressive and conservative arguments to advocate for a more balanced approach. Challenge each of their points to illustrate why a moderate risk strategy might offer the best of both worlds, providing growth potential while safeguarding against extreme volatility. Focus on debating rather than simply presenting data, aiming to show that a balanced view can lead to the most reliable outcomes. Output conversationally as if you are speaking without any special formatting.""" + get_language_instruction()
+Engage actively by analyzing both sides critically, addressing weaknesses in the aggressive and conservative arguments to advocate for a more balanced approach. Challenge each of their points to illustrate why a moderate risk strategy might offer the best of both worlds, providing growth potential while safeguarding against extreme volatility. Focus on debating rather than simply presenting data, aiming to show that a balanced view can lead to the most reliable outcomes. Output conversationally as if you are speaking without any special formatting.""" + "\n\n"  + UNTRUSTED_CONTENT_INSTRUCTION + "\n" + SHARED_NEWS_INSTRUCTION + DEBATE_EVIDENCE_INSTRUCTION + get_language_instruction()
 
-        response = llm.invoke(prompt)
+        response = invoke_complete_text(llm, prompt)
 
-        argument = f"Neutral Analyst: {response.content}"
+        argument = f"Neutral Analyst: {response}"
 
         new_risk_debate_state = {
             "history": history + "\n" + argument,

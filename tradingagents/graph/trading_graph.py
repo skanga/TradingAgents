@@ -1,7 +1,8 @@
 # TradingAgents/graph/trading_graph.py
 
-import logging
 import json
+import logging
+import math
 import os
 from contextlib import contextmanager
 from pathlib import Path
@@ -25,10 +26,11 @@ from tradingagents.agents.utils.agent_utils import (
     get_stock_data,
     get_verified_market_snapshot,
 )
-from tradingagents.agents.utils.memory import TradingMemoryLog
+from tradingagents.agents.utils.memory import TradingMemoryLog, outcome_known_by
 from tradingagents.dataflows.config import reset_config, use_config
 from tradingagents.dataflows.symbol_utils import normalize_symbol
 from tradingagents.dataflows.utils import safe_ticker_component
+from tradingagents.dataflows.news_evidence import news_run_scope
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_report_tree
@@ -302,14 +304,18 @@ class TradingAgentsGraph:
         self, ticker: str, trade_date: str, holding_days: int = 5,
         benchmark: str = "SPY",
         include_resolution: bool = False,
+        include_window: bool = False,
     ):
         """Fetch raw and alpha return for ticker over holding_days from trade_date.
 
         ``benchmark`` is the index used as the alpha baseline (resolved by the
         caller via ``_resolve_benchmark``). Returns ``(raw_return, alpha_return,
         actual_holding_days)`` or ``(None, None, None)`` if price data is
-        unavailable (too recent, delisted, or network error).
+        unavailable (too recent, delisted, or network error). ``include_resolution``
+        appends the end session; ``include_window`` appends both end and start
+        sessions. Endpoints use matching session dates with no forward filling.
         """
+        missing = (None,) * (5 if include_window else 4 if include_resolution else 3)
         try:
             start = datetime.strptime(trade_date, "%Y-%m-%d")
             end = start + timedelta(days=holding_days + 7)  # buffer for weekends/holidays
@@ -318,36 +324,43 @@ class TradingAgentsGraph:
             stock = yf.Ticker(normalize_symbol(ticker)).history(start=trade_date, end=end_str)
             bench = yf.Ticker(benchmark).history(start=trade_date, end=end_str)
 
-            if len(stock) <= holding_days or len(bench) <= holding_days:
-                return (None, None, None, None) if include_resolution else (None, None, None)
+            stock = stock.sort_index()
+            bench = bench.sort_index()
+            if holding_days <= 0 or len(stock) <= holding_days or bench.empty:
+                return missing
 
             actual_days = holding_days
-            raw = float(
-                (stock["Close"].iloc[actual_days] - stock["Close"].iloc[0])
-                / stock["Close"].iloc[0]
-            )
-            bench_ret = float(
-                (bench["Close"].iloc[actual_days] - bench["Close"].iloc[0])
-                / bench["Close"].iloc[0]
-            )
+            # Match exchange-local session dates, not UTC instants or row offsets.
+            # Missing benchmark endpoints stay pending; never extend the horizon.
+            stock_dates = stock.index.strftime("%Y-%m-%d")
+            bench_dates = bench.index.strftime("%Y-%m-%d")
+            if stock_dates.has_duplicates or bench_dates.has_duplicates:
+                raise ValueError("Duplicate session dates in outcome prices")
+            benchmark_closes = dict(zip(bench_dates, bench["Close"]))
+            first, last = stock_dates[0], stock_dates[actual_days]
+            prices = [
+                float(stock["Close"].iloc[0]), float(stock["Close"].iloc[actual_days]),
+                float(benchmark_closes[first]), float(benchmark_closes[last]),
+            ]
+            if not all(math.isfinite(price) and price > 0 for price in prices):
+                raise ValueError("Invalid endpoint price in outcome window")
+            raw = (prices[1] - prices[0]) / prices[0]
+            bench_ret = (prices[3] - prices[2]) / prices[2]
             alpha = raw - bench_ret
-            if not include_resolution:
-                return raw, alpha, actual_days
-            resolution_value = stock.index[actual_days]
-            resolution_date = (
-                resolution_value.strftime("%Y-%m-%d")
-                if hasattr(resolution_value, "strftime")
-                else (start + timedelta(days=actual_days)).strftime("%Y-%m-%d")
-            )
-            return raw, alpha, actual_days, resolution_date
+            if include_window:
+                return raw, alpha, actual_days, last, first
+            if include_resolution:
+                return raw, alpha, actual_days, last
+            return raw, alpha, actual_days
         except Exception as e:
             logger.warning(
                 "Could not resolve outcome for %s on %s vs %s (will retry next run): %s",
                 ticker, trade_date, benchmark, e,
             )
-            return (None, None, None, None) if include_resolution else (None, None, None)
+            return missing
 
-    def _resolve_pending_entries(self, ticker: str) -> None:
+    def _resolve_pending_entries(self, ticker: str, *, namespace: str | None = None,
+                                 as_of: str | None = None) -> None:
         """Resolve pending log entries for ticker at the start of a new run.
 
         Fetches returns for each same-ticker pending entry, generates reflections,
@@ -357,7 +370,10 @@ class TradingAgentsGraph:
         Trade-off: only same-ticker entries are resolved per run.  Entries for
         other tickers accumulate until that ticker is run again.
         """
-        pending = [e for e in self.memory_log.get_pending_entries() if e["ticker"] == ticker]
+        if namespace is not None and as_of is None:
+            raise ValueError("Namespaced resolution requires as_of")
+        pending = [e for e in self.memory_log.get_pending_entries(namespace=namespace)
+                   if e["ticker"] == ticker and (as_of is None or e["date"] <= as_of)]
         if not pending:
             return
 
@@ -366,22 +382,34 @@ class TradingAgentsGraph:
         for entry in pending:
             outcome = self._fetch_returns(
                 ticker, entry["date"], benchmark=benchmark, include_resolution=True,
+                include_window=True,
             )
-            if len(outcome) == 4:
+            evaluation_start = None
+            if len(outcome) == 5:
+                raw, alpha, days, resolution_date, evaluation_start = outcome
+            elif len(outcome) == 4:
                 raw, alpha, days, resolution_date = outcome
             else:  # compatibility for injected/custom return fetchers
                 raw, alpha, days = outcome
-                resolution_date = (
-                    datetime.strptime(entry["date"], "%Y-%m-%d") + timedelta(days=days or 0)
-                ).strftime("%Y-%m-%d") if days is not None else None
+                # A session count does not establish a calendar resolution date.
+                resolution_date = None
             if raw is None or alpha is None or days is None:
                 continue  # price not available yet — try again next run
+            if as_of is not None and not outcome_known_by(
+                {"date": entry["date"], "resolution_date": resolution_date}, as_of
+            ):
+                continue  # do not even generate a lesson whose outcome is not known
             try:
                 reflection = self.reflector.reflect_on_final_decision(
-                    final_decision=entry.get("decision", ""),
+                    # Eligible legacy entries may use "Buy NVDA" prose. The
+                    # memory layer verified the tag against that decision.
+                    final_decision=f"Rating: {entry['rating']}\n\n{entry.get('decision', '')}",
                     raw_return=raw,
                     alpha_return=alpha,
                     benchmark_name=benchmark,
+                    holding_days=days,
+                    evaluation_start=evaluation_start,
+                    resolution_date=resolution_date,
                 )
             except Exception as e:
                 logger.warning(
@@ -390,12 +418,15 @@ class TradingAgentsGraph:
                 )
                 continue
             updates.append({
+                "namespace": entry.get("namespace", "legacy"),
                 "ticker": ticker,
                 "trade_date": entry["date"],
                 "raw_return": raw,
                 "alpha_return": alpha,
                 "holding_days": days,
                 "reflection": reflection,
+                "benchmark_name": benchmark,
+                "evaluation_start": evaluation_start,
                 "resolution_date": resolution_date,
             })
 
@@ -418,9 +449,6 @@ class TradingAgentsGraph:
         try:
             self.ticker = safe_company_name
 
-            # Resolve any pending memory-log entries for this ticker before the pipeline runs.
-            self._resolve_pending_entries(safe_company_name)
-
             with self.checkpoint_scope(safe_company_name, safe_trade_date, asset_type) as tid:
                 return self._run_graph(
                     safe_company_name, safe_trade_date, asset_type=asset_type,
@@ -429,19 +457,30 @@ class TradingAgentsGraph:
         finally:
             reset_config(token)
 
-    def _run_signature(self, asset_type: str) -> str:
+    def _run_signature(self, asset_type: str, trade_date: str | None = None) -> str:
+        mode = self.config.get("memory_namespace", "auto")
+        namespace = self._memory_namespace(trade_date, mode) if trade_date else mode
         return "|".join([
             "analysts=" + ",".join(self.selected_analysts),
             f"debate={self.config['max_debate_rounds']}",
             f"risk={self.config['max_risk_discuss_rounds']}",
             f"asset={asset_type}",
+            f"memory_policy=2:{namespace}",
+            "historical_tools_policy=1",
+            "news_evidence_policy=1",
+            "social_evidence_policy=2",
+            "sentiment_example_policy=1",
+            "prompt_boundary_policy=1",
+            "debate_integrity_policy=1",
+            "response_integrity_policy=1",
+            "decision_review_policy=1",
         ])
 
     def begin_checkpoint(self, company_name, trade_date, asset_type: str = "stock") -> str | None:
         self._resuming = False
         if not self.config.get("checkpoint_enabled"):
             return None
-        signature = self._run_signature(asset_type)
+        signature = self._run_signature(asset_type, str(trade_date))
         self._checkpointer_ctx = get_checkpointer(self.config["data_cache_dir"], company_name)
         saver = self._checkpointer_ctx.__enter__()
         self.graph = self.workflow.compile(checkpointer=saver)
@@ -474,34 +513,52 @@ class TradingAgentsGraph:
         if self.config.get("checkpoint_enabled"):
             clear_checkpoint(
                 self.config["data_cache_dir"], company_name, str(trade_date),
-                self._run_signature(asset_type),
+                self._run_signature(asset_type, str(trade_date)),
             )
 
     def stream_with_checkpoint(self, initial_state, args, company_name, trade_date,
                                asset_type: str = "stock"):
-        """Stream using the same safe checkpoint lifecycle as propagate()."""
-        with self.checkpoint_scope(company_name, trade_date, asset_type) as tid:
+        """Stream using the same safe checkpoint and news-cache lifecycle as propagate()."""
+        with news_run_scope(), self.checkpoint_scope(company_name, trade_date, asset_type) as tid:
             if tid is not None:
                 args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = tid
             yield from self.graph.stream(self.checkpoint_input(initial_state), **args)
             self.clear_checkpoint_on_success(company_name, trade_date, asset_type)
 
     @staticmethod
-    def _memory_as_of(trade_date: str) -> str | None:
-        """Limit historical runs to information resolved by their trade date."""
-        value = str(trade_date)
-        return value if value < datetime.now().strftime("%Y-%m-%d") else None
+    def _memory_as_of(trade_date: str) -> str:
+        """Never allow lessons beyond the run date or today's date."""
+        value = TradingAgentsGraph._validate_trade_date(trade_date)
+        return min(value, datetime.now().strftime("%Y-%m-%d"))
 
+    @staticmethod
+    def _memory_namespace(trade_date: str, mode: str = "auto") -> str:
+        if mode not in ("auto", "live", "simulation"):
+            raise ValueError("memory_namespace must be auto, live, or simulation")
+        if mode != "auto":
+            return mode
+        value = TradingAgentsGraph._validate_trade_date(trade_date)
+        return "live" if value == datetime.now().strftime("%Y-%m-%d") else "simulation"
+
+    def prepare_memory(self, ticker: str, trade_date: str) -> tuple[str, str]:
+        """Shared graph/GUI boundary: resolve and read only this run's memory scope."""
+        namespace = TradingAgentsGraph._memory_namespace(
+            trade_date, self.config.get("memory_namespace", "auto")
+        )
+        as_of = TradingAgentsGraph._memory_as_of(trade_date)
+        self._resolve_pending_entries(ticker, namespace=namespace, as_of=as_of)
+        return self.memory_log.get_past_context(ticker, namespace=namespace, as_of=as_of), namespace
+
+    @news_run_scope()
     def _run_graph(self, company_name, trade_date, asset_type: str = "stock",
                    checkpoint_thread_id: str | None = None):
         """Execute the graph and write the resulting state to disk and memory log."""
         # Initialize state — inject memory log context for PM.
-        historical_as_of = self._memory_as_of(trade_date)
-        past_context = self.memory_log.get_past_context(company_name, as_of=historical_as_of)
+        past_context, namespace = TradingAgentsGraph.prepare_memory(self, company_name, trade_date)
         from tradingagents.agents.utils.agent_utils import build_instrument_context, resolve_instrument_identity
 
         instrument_context = build_instrument_context(
-            company_name, asset_type, resolve_instrument_identity(company_name)
+            company_name, asset_type, resolve_instrument_identity(company_name, curr_date=trade_date)
         )
         init_agent_state = self.propagator.create_initial_state(
             company_name,
@@ -544,6 +601,7 @@ class TradingAgentsGraph:
             ticker=company_name,
             trade_date=trade_date,
             final_trade_decision=final_state["final_trade_decision"],
+            namespace=namespace,
         )
 
         # Clear checkpoint on successful completion to avoid stale state.

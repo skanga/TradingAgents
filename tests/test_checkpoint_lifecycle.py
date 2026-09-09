@@ -136,7 +136,7 @@ def test_cli_style_usage_saves_then_resumes():
 
         # A checkpoint was saved for this run signature (so --checkpoint works).
 
-        sig = g1._run_signature("stock")
+        sig = g1._run_signature("stock", "2026-05-08")
         assert checkpoint_step(tmp, "AAPL", "2026-05-08", sig) is not None
 
         # Run 2 (fresh graph, as a new CLI invocation): resume and finish.

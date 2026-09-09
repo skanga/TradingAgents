@@ -1,0 +1,27 @@
+{
+  "backend": {
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "base_url": "http://127.0.0.1:10531/v1",
+    "timeout": 300,
+    "max_retries": 0
+  },
+  "evidence_provenance": "synthetic",
+  "response_provenance": "live-local-endpoint",
+  "approved_new_attempts": 2,
+  "prior_generation_attempts": 48,
+  "revised_total_ceiling": 50,
+  "source_dataset": "evaluation_runs\\local-luna-continuation-20260908T204328749151Z",
+  "source_record_hashes": {
+    "corpus-adverse": "1b904cc93fe92300e116bceb2e0f8d282a59a46d316c252fd0070ea987d9ecd8",
+    "corpus-balanced": "3bc88ead27d3bab20f9e5cab418708f607e737455ad06a4917351b88e727caf2",
+    "corpus-insufficient": "b405db06f6c38eec0726f76c5d184dfafaf0479558d44c82368cf6688880d53b",
+    "corpus-supportive": "e97ba548306134d0d139d3971f39821fe42534608b64f771a939ac27ca89c3fa"
+  },
+  "selected_task_ids": [
+    "e3d66e3c0d3aad0fa9b4cf530c2203844752319f1e0d7b35e258d9dab96b4c9f",
+    "6a362d10a9c41b78e1563991dbe235469f2e82f297c5fa956b0548646077cf6d"
+  ],
+  "started_at": "2026-09-08T20:54:27.499943+00:00",
+  "note": "Fill only two previously unrun tasks. Preserve all 46 prior records unchanged. Same prompts/backend; no new repeats or models."
+}

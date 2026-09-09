@@ -22,6 +22,7 @@ from datetime import datetime
 from urllib.request import Request, urlopen
 
 from .date_window import in_window
+from .social_evidence import SocialSample, bounded_sample_limit
 from .symbol_utils import crypto_base
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,8 @@ def fetch_stocktwits_messages(
     symbol has no messages, or the response shape is unexpected — the
     caller never has to special-case None or exceptions.
     """
+    # One public-stream page; increasing this does not create historical coverage.
+    limit = bounded_sample_limit(limit, 30)
     url = _API.format(ticker=_stocktwits_symbol(ticker))
     req = Request(url, headers={"User-Agent": _UA, "Accept": "application/json"})
     try:
@@ -94,15 +97,32 @@ def fetch_stocktwits_messages(
         logger.warning("StockTwits fetch failed for %s: %s", ticker, exc)
         return f"<stocktwits unavailable: {type(exc).__name__}>"
 
-    messages = data.get("messages", []) if isinstance(data, dict) else []
+    messages = data.get("messages") if isinstance(data, dict) else None
+    if not isinstance(messages, list) or any(not isinstance(m, dict) for m in messages):
+        return "<stocktwits unavailable: malformed message feed>"
+    messages = messages[:100]
+    if any(
+        not isinstance(m.get("user") or {}, dict)
+        or not isinstance(m.get("entities") or {}, dict)
+        or not isinstance(m.get("body") or "", str)
+        for m in messages
+    ):
+        return "<stocktwits unavailable: malformed message fields>"
     messages = _within_window(messages, start_date, end_date)
+    sample = SocialSample()
+    messages = sample.select(
+        messages, limit, identity=lambda m: m.get("id"),
+        author=lambda m: (m.get("user") or {}).get("id") or (m.get("user") or {}).get("username"),
+        text=lambda m: m.get("body"),
+    )
     if not messages:
         if start_date and end_date:
             return (
                 f"<no StockTwits messages for ${ticker.upper()} within "
-                f"{start_date}..{end_date} (public stream serves only recent messages)>"
+                f"{start_date}..{end_date} (public stream serves only recent messages)>\n"
+                + sample.summary()
             )
-        return f"<no StockTwits messages found for ${ticker.upper()}>"
+        return f"<no StockTwits messages retained for ${ticker.upper()}>\n" + sample.summary()
 
     lines = []
     bullish = bearish = unlabeled = 0
@@ -128,12 +148,16 @@ def fetch_stocktwits_messages(
         lines.append(f"[{created} · @{user} · {tag}] {body}")
 
     total = bullish + bearish + unlabeled
-    bull_pct = round(100 * bullish / total) if total else 0
-    bear_pct = round(100 * bearish / total) if total else 0
+    labeled = bullish + bearish
+    if labeled:
+        ratio = (f"Bullish: {bullish} ({round(100 * bullish / labeled)}%) · "
+                 f"Bearish: {bearish} ({round(100 * bearish / labeled)}%) — labeled posts only")
+    else:
+        ratio = "Bullish/Bearish ratio: unavailable (no labeled posts; not neutral)"
     summary = (
-        f"Bullish: {bullish} ({bull_pct}%) · "
-        f"Bearish: {bearish} ({bear_pct}%) · "
-        f"Unlabeled: {unlabeled} · "
-        f"Total: {total} most-recent messages"
+        f"{ratio}\nLabel coverage: {labeled}/{total} retained posts · "
+        f"Unlabeled: {unlabeled} · Total: {total} retained messages\n"
+        "User-selected labels are not a representative retail sentiment poll.\n"
+        + sample.summary()
     )
     return summary + "\n\n" + "\n".join(lines)

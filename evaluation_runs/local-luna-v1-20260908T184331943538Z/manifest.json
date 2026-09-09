@@ -1,0 +1,25 @@
+{
+  "backend": {
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "base_url": "http://127.0.0.1:10531/v1",
+    "max_retries": 0,
+    "timeout": 60
+  },
+  "evidence_provenance": "synthetic",
+  "response_provenance": "live-local-endpoint",
+  "approved_max_calls": 48,
+  "prior_failed_root_attempts": 1,
+  "remaining_max_calls": 47,
+  "prior_run": "evaluation_runs/local-luna-20260908T184154839228Z",
+  "endpoint_discovery": "GET /v1/models returned 200 and listed the requested model; no generation",
+  "repeats": 1,
+  "schedule_seed": 17,
+  "started_at": "2026-09-08T18:43:31.943859+00:00",
+  "cases": [
+    "corpus-balanced",
+    "corpus-supportive",
+    "corpus-adverse",
+    "corpus-insufficient"
+  ]
+}

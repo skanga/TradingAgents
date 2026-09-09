@@ -61,7 +61,7 @@ def _msg(created_iso, sentiment=None):
         "created_at": created_iso,
         "user": {"username": "u"},
         "entities": {"sentiment": {"basic": sentiment}},
-        "body": "text",
+        "body": f"Distinct discussion at {created_iso}",  # test dates, not duplicate suppression
     }
 
 
