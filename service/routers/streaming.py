@@ -9,8 +9,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/streaming", tags=["streaming"])
 
 
 @router.get("/state")
-def state() -> Dict[str, Any]:
+def state() -> dict[str, Any]:
     """Return the last-known price snapshot for every ticker we've polled."""
     out = {}
     for ticker, st in broadcaster._state.items():  # internal access; small surface
@@ -49,10 +50,8 @@ async def _stream_channel(ws: WebSocket, channel: str, ticker: str) -> None:
         pass
     finally:
         await broadcaster.unsubscribe(channel, ticker, q)
-        try:
+        with contextlib.suppress(RuntimeError):
             await ws.close()
-        except RuntimeError:
-            pass
 
 
 @router.websocket("/price/{ticker}")
@@ -83,7 +82,5 @@ async def combined_stream(ws: WebSocket, ticker: str) -> None:
     finally:
         await broadcaster.unsubscribe("price", ticker, pq)
         await broadcaster.unsubscribe("news", ticker, nq)
-        try:
+        with contextlib.suppress(RuntimeError):
             await ws.close()
-        except RuntimeError:
-            pass

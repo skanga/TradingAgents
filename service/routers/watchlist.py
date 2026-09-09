@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -17,16 +15,16 @@ class WatchlistEntry(BaseModel):
     id: int
     ticker: str
     added_at: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class WatchlistAddRequest(BaseModel):
     ticker: str = Field(min_length=1, max_length=32)
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
-@router.get("", response_model=List[WatchlistEntry])
-def list_watchlist() -> List[WatchlistEntry]:
+@router.get("", response_model=list[WatchlistEntry])
+def list_watchlist() -> list[WatchlistEntry]:
     return [WatchlistEntry(**e) for e in storage.list_watchlist()]
 
 

@@ -16,13 +16,12 @@ For trade dates in the future, only the backward view exists.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date, datetime, timedelta
-from typing import Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
 import yfinance as yf
-
 
 _INDEX_TICKERS = {
     "SPY": "SPDR S&P 500 ETF (broad market)",
@@ -45,7 +44,7 @@ def _parse_date(value: str | date) -> date:
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
-def _fetch_close_cached(symbol: str, start_iso: str, end_iso: str) -> Optional[pd.Series]:
+def _fetch_close_cached(symbol: str, start_iso: str, end_iso: str) -> pd.Series | None:
     """Cached yfinance fetch keyed by (symbol, date range).
 
     Streamlit reruns the whole page on every interaction; without caching,
@@ -64,14 +63,14 @@ def _fetch_close_cached(symbol: str, start_iso: str, end_iso: str) -> Optional[p
         return None
 
 
-def _fetch_close(symbol: str, start: date, end: date) -> Optional[pd.Series]:
+def _fetch_close(symbol: str, start: date, end: date) -> pd.Series | None:
     return _fetch_close_cached(symbol, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
 
 
 def build_comparison_frame(ticker: str, trade_date: str | date,
                           *, days_back: int, days_forward: int,
                           benchmarks: Iterable[str] = ("SPY", "QQQ"),
-                          ) -> Optional[pd.DataFrame]:
+                          ) -> pd.DataFrame | None:
     """Wrapper that normalises args to hashable types so the cached
     inner function can do its job."""
     td = trade_date if isinstance(trade_date, str) else trade_date.isoformat()
@@ -84,15 +83,15 @@ def build_comparison_frame(ticker: str, trade_date: str | date,
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
 def _build_comparison_frame_cached(ticker: str, trade_date: str,
                                   days_back: int, days_forward: int,
-                                  benchmarks: Tuple[str, ...],
-                                  ) -> Optional[pd.DataFrame]:
+                                  benchmarks: tuple[str, ...],
+                                  ) -> pd.DataFrame | None:
     """Return a DataFrame indexed by date with ticker + benchmark columns,
     each normalised so the trade date sits at value 100."""
     td = _parse_date(trade_date)
     start = td - timedelta(days=days_back + 5)
     end = min(td + timedelta(days=days_forward + 5), date.today() + timedelta(days=1))
 
-    series: Dict[str, pd.Series] = {}
+    series: dict[str, pd.Series] = {}
     for sym in [ticker, *benchmarks]:
         s = _fetch_close(sym, start, end)
         if s is not None and len(s) >= 2:
@@ -108,19 +107,16 @@ def _build_comparison_frame_cached(ticker: str, trade_date: str,
     # Normalise to 100 at the trade date (or the first row >= trade date).
     td_ts = pd.Timestamp(td)
     pivot_idx = df.index[df.index >= td_ts]
-    if len(pivot_idx) == 0:
-        # Trade date is in the future — pivot on the last available row.
-        pivot = df.iloc[-1]
-    else:
-        pivot = df.loc[pivot_idx[0]]
+    # A future trade date pivots on the last available row.
+    pivot = df.iloc[-1] if len(pivot_idx) == 0 else df.loc[pivot_idx[0]]
 
     normalised = df.divide(pivot).multiply(100.0)
     return normalised
 
 
 def realised_returns_table(ticker: str, trade_date: str | date,
-                          windows: Optional[Dict[str, int]] = None,
-                          ) -> Optional[pd.DataFrame]:
+                          windows: dict[str, int] | None = None,
+                          ) -> pd.DataFrame | None:
     """Cache-friendly wrapper — see ``_realised_returns_cached``."""
     td = trade_date if isinstance(trade_date, str) else trade_date.isoformat()
     if windows is None:
@@ -131,9 +127,9 @@ def realised_returns_table(ticker: str, trade_date: str | date,
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
 def _realised_returns_cached(ticker: str, trade_date: str,
-                             windows_tuple: Tuple[Tuple[str, int], ...],
-                             ) -> Optional[pd.DataFrame]:
-    windows: Dict[str, int] = dict(windows_tuple)
+                             windows_tuple: tuple[tuple[str, int], ...],
+                             ) -> pd.DataFrame | None:
+    windows: dict[str, int] = dict(windows_tuple)
     """Compute (raw return, return vs SPY) for the ticker over each window
     that has enough forward data. Returns ``None`` if the trade date is
     too recent for any window to have closed."""
@@ -142,7 +138,7 @@ def _realised_returns_cached(ticker: str, trade_date: str,
     if td >= today:
         return None
 
-    rows: List[Dict[str, object]] = []
+    rows: list[dict[str, object]] = []
     for label, days in windows.items():
         end_target = td + timedelta(days=days)
         if end_target > today:
@@ -176,5 +172,5 @@ def _realised_returns_cached(ticker: str, trade_date: str,
     return pd.DataFrame(rows)
 
 
-def benchmark_labels() -> Dict[str, str]:
+def benchmark_labels() -> dict[str, str]:
     return dict(_INDEX_TICKERS)

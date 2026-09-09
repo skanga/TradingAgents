@@ -12,21 +12,20 @@ storage.init_db()
 st.title("Notes")
 
 # ---- New note form -----------------------------------------------------
-with st.expander("➕ New note", expanded=False):
-    with st.form("new_note", clear_on_submit=True):
-        c1, c2 = st.columns([2, 1])
-        title = c1.text_input("Title")
-        ticker = c2.text_input("Ticker (optional)").strip().upper() or None
-        body = st.text_area("Body (markdown)", height=180)
-        tags = st.text_input("Tags (comma-separated)")
-        if st.form_submit_button("Save", type="primary"):
-            if not title.strip() or not body.strip():
-                st.warning("Title and body are required.")
-            else:
-                storage.add_note(title=title.strip(), body=body, ticker=ticker,
-                                 tags=tags or None)
-                st.success("Saved.")
-                st.rerun()
+with st.expander("➕ New note", expanded=False), st.form("new_note", clear_on_submit=True):
+    c1, c2 = st.columns([2, 1])
+    title = c1.text_input("Title")
+    ticker = c2.text_input("Ticker (optional)").strip().upper() or None
+    body = st.text_area("Body (markdown)", height=180)
+    tags = st.text_input("Tags (comma-separated)")
+    if st.form_submit_button("Save", type="primary"):
+        if not title.strip() or not body.strip():
+            st.warning("Title and body are required.")
+        else:
+            storage.add_note(title=title.strip(), body=body, ticker=ticker,
+                             tags=tags or None)
+            st.success("Saved.")
+            st.rerun()
 
 # ---- Filter bar --------------------------------------------------------
 fc1, fc2 = st.columns([3, 1])

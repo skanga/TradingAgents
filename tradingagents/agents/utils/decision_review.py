@@ -3,21 +3,22 @@
 The two checks use identical frozen analyst evidence, not the primary answer or
 one another's answers. Quote presence is checked, not factual truth/entailment.
 """
-from collections.abc import Mapping
-from copy import deepcopy
-from functools import wraps
 import hashlib
 import html
 import json
+from collections.abc import Mapping
+from copy import deepcopy
+from functools import wraps
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
 
 from .prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block
 from .rating import RATING_REVIEW, parse_actionable_rating
 from .response_integrity import response_text
 from .structured import NO_EXTERNAL_TOOLS
-from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
 
 _REPORTS = ("market_report", "fundamentals_report", "news_report", "sentiment_report")
 _MAX_RESPONSE = 16000

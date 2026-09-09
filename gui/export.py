@@ -22,7 +22,7 @@ import io
 import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from markdown_it import MarkdownIt
 
@@ -59,7 +59,7 @@ _SECTIONS: list[tuple[str, str | None]] = [
 ]
 
 
-def _section_body(state: Dict[str, Any], label: str, key: Optional[str]) -> str:
+def _section_body(state: dict[str, Any], label: str, key: str | None) -> str:
     """Return the markdown body for one section."""
     if label == "Bull vs Bear":
         d = state.get("investment_debate_state") or {}
@@ -89,7 +89,7 @@ def _section_body(state: Dict[str, Any], label: str, key: Optional[str]) -> str:
     return "_(no content)_"
 
 
-def _meta_header(meta: Dict[str, Any]) -> str:
+def _meta_header(meta: dict[str, Any]) -> str:
     """Top metadata block shared by markdown/HTML/PDF."""
     ticker = meta.get("ticker", "?")
     trade_date = meta.get("trade_date", "?")
@@ -119,7 +119,7 @@ def _meta_header(meta: Dict[str, Any]) -> str:
 # Markdown export
 # ---------------------------------------------------------------------------
 
-def render_markdown(state: Dict[str, Any], meta: Dict[str, Any]) -> str:
+def render_markdown(state: dict[str, Any], meta: dict[str, Any]) -> str:
     parts = [_meta_header(meta), "\n---\n"]
     for label, key in _SECTIONS:
         parts.append(f"\n## {label}\n\n")
@@ -209,7 +209,7 @@ def _md_to_html(text: str) -> str:
     return _MD_RENDERER.render(text)
 
 
-def render_html(state: Dict[str, Any], meta: Dict[str, Any]) -> str:
+def render_html(state: dict[str, Any], meta: dict[str, Any]) -> str:
     tab_buttons = []
     panels = []
     for i, (label, key) in enumerate(_SECTIONS):
@@ -243,14 +243,14 @@ def render_html(state: Dict[str, Any], meta: Dict[str, Any]) -> str:
 # PDF export
 # ---------------------------------------------------------------------------
 
-def _pdf_title(meta: Dict[str, Any]) -> str:
+def _pdf_title(meta: dict[str, Any]) -> str:
     return f"{meta.get('ticker', '?')} - {meta.get('trade_date', '?')} TradingAgents report"
 
 
 _PDF_CSS = ""
 
 
-def _pdf_html(state: Dict[str, Any], meta: Dict[str, Any]) -> str:
+def _pdf_html(state: dict[str, Any], meta: dict[str, Any]) -> str:
     sections_html = []
     for label, key in _SECTIONS:
         body_md = _section_body(state, label, key)
@@ -291,7 +291,7 @@ def _pdf_pages(markdown_text: str) -> list[str]:
     return pages or [""]
 
 
-def render_pdf(state: Dict[str, Any], meta: Dict[str, Any]) -> bytes:
+def render_pdf(state: dict[str, Any], meta: dict[str, Any]) -> bytes:
     """Render a print-friendly PDF using matplotlib's built-in PDF backend."""
     import matplotlib
 
@@ -337,7 +337,7 @@ def render_pdf(state: Dict[str, Any], meta: Dict[str, Any]) -> bytes:
 # Path planning + write helpers
 # ---------------------------------------------------------------------------
 
-def export_basename(meta: Dict[str, Any]) -> str:
+def export_basename(meta: dict[str, Any]) -> str:
     """Stable, never-overwriting basename: ``<run_id>__<date>__<ts>``.
 
     Falls back to a hash of the source log path when ``run_id`` is missing
@@ -352,7 +352,7 @@ def export_basename(meta: Dict[str, Any]) -> str:
     return f"{run_id}__{trade_date}__{ts}"
 
 
-def export_path(meta: Dict[str, Any], ext: str) -> Path:
+def export_path(meta: dict[str, Any], ext: str) -> Path:
     """Return the disk path an export of this run should be written to.
 
     Layout: ``<exports>/<TICKER>/<basename>.<ext>``. The folder is created
@@ -364,7 +364,7 @@ def export_path(meta: Dict[str, Any], ext: str) -> Path:
     return folder / f"{export_basename(meta)}.{ext.lstrip('.')}"
 
 
-def write_export(content: str | bytes, meta: Dict[str, Any], ext: str) -> Path:
+def write_export(content: str | bytes, meta: dict[str, Any], ext: str) -> Path:
     """Write ``content`` to a fresh, never-overwriting export path."""
     path = export_path(meta, ext)
     if isinstance(content, str):
@@ -374,14 +374,14 @@ def write_export(content: str | bytes, meta: Dict[str, Any], ext: str) -> Path:
     return path
 
 
-def list_exports_for_run(meta: Dict[str, Any]) -> Dict[str, Path]:
+def list_exports_for_run(meta: dict[str, Any]) -> dict[str, Path]:
     """Find existing exports for a run id under the exports tree.
 
     Looks for files starting with ``<run_id>__`` so re-export creates new
     timestamped files but the page can still surface the most recent of
     each format if desired.
     """
-    out: Dict[str, Path] = {}
+    out: dict[str, Path] = {}
     ticker = meta.get("ticker") or ""
     run_id = meta.get("run_id") or ""
     if not ticker or not run_id:

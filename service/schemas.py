@@ -7,12 +7,11 @@ so the API surface is stable independent of GUI changes.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from gui.brief import Brief, Trigger  # noqa: F401  (re-exported)
-
 
 # ---------------------------------------------------------------------------
 # Run lifecycle
@@ -24,10 +23,10 @@ class RunCreateRequest(BaseModel):
     llm_provider: str = "openai"
     deep_think_llm: str
     quick_think_llm: str
-    backend_url: Optional[str] = None
+    backend_url: str | None = None
     max_debate_rounds: int = 1
     max_risk_discuss_rounds: int = 1
-    data_vendors: Dict[str, str] = Field(
+    data_vendors: dict[str, str] = Field(
         default_factory=lambda: {
             "core_stock_apis": "yfinance",
             "technical_indicators": "yfinance",
@@ -42,35 +41,35 @@ class RunSummary(BaseModel):
     run_id: str
     ticker: str
     trade_date: str
-    provider: Optional[str] = None
-    deep_model: Optional[str] = None
-    quick_model: Optional[str] = None
-    backend_url: Optional[str] = None
-    debate_rounds: Optional[int] = None
-    risk_rounds: Optional[int] = None
+    provider: str | None = None
+    deep_model: str | None = None
+    quick_model: str | None = None
+    backend_url: str | None = None
+    debate_rounds: int | None = None
+    risk_rounds: int | None = None
     status: str
-    decision: Optional[str] = None
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
+    decision: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
     llm_calls: int = 0
     tool_calls: int = 0
     tokens_in: int = 0
     tokens_out: int = 0
-    log_path: Optional[str] = None
-    error_message: Optional[str] = None
-    error_log_path: Optional[str] = None
+    log_path: str | None = None
+    error_message: str | None = None
+    error_log_path: str | None = None
 
 
 class RunDetail(RunSummary):
     """Full run state for the per-run drilldown view."""
-    state: Dict[str, Any] = Field(default_factory=dict)
-    tool_trace: List[Dict[str, Any]] = Field(default_factory=list)
+    state: dict[str, Any] = Field(default_factory=dict)
+    tool_trace: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RunEvent(BaseModel):
     """Server-sent event over the WebSocket while a run streams."""
     type: str  # start | section | debate | risk | chunk | tool_start | tool_end | stats | warning | done | error
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -80,24 +79,24 @@ class RunEvent(BaseModel):
 class NoteCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     body: str = Field(min_length=1)
-    ticker: Optional[str] = None
-    run_id: Optional[str] = None
-    tags: Optional[str] = None
+    ticker: str | None = None
+    run_id: str | None = None
+    tags: str | None = None
 
 
 class NoteUpdateRequest(BaseModel):
     title: str
     body: str
-    tags: Optional[str] = None
+    tags: str | None = None
 
 
 class Note(BaseModel):
     id: int
     title: str
     body: str
-    ticker: Optional[str] = None
-    run_id: Optional[str] = None
-    tags: Optional[str] = None
+    ticker: str | None = None
+    run_id: str | None = None
+    tags: str | None = None
     created_at: str
     updated_at: str
 
@@ -112,7 +111,7 @@ class ChatMessage(BaseModel):
     role: str  # user | assistant
     content: str
     created_at: str
-    model: Optional[str] = None
+    model: str | None = None
 
 
 class ChatAskRequest(BaseModel):
@@ -132,14 +131,14 @@ class ProviderKey(BaseModel):
 
 
 class SettingsResponse(BaseModel):
-    api_keys: List[ProviderKey]
-    defaults: Dict[str, Any]
+    api_keys: list[ProviderKey]
+    defaults: dict[str, Any]
     config_path: str
 
 
 class SettingsUpdateRequest(BaseModel):
-    api_keys: Optional[Dict[str, str]] = None  # env_name -> value (empty value clears)
-    defaults: Optional[Dict[str, Any]] = None
+    api_keys: dict[str, str] | None = None  # env_name -> value (empty value clears)
+    defaults: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +152,7 @@ class MemoryEntry(BaseModel):
 
 class MemoryResponse(BaseModel):
     path: str
-    entries: List[MemoryEntry]
+    entries: list[MemoryEntry]
     total: int
     resolved_count: int
     pending_count: int
@@ -165,15 +164,15 @@ class MemoryResponse(BaseModel):
 
 class ChartPoint(BaseModel):
     date: str
-    values: Dict[str, float]
+    values: dict[str, float]
 
 
 class ChartComparisonResponse(BaseModel):
     ticker: str
     trade_date: str
-    benchmarks: List[str]
-    points: List[ChartPoint]
-    realised_returns: Optional[List[Dict[str, str]]] = None
+    benchmarks: list[str]
+    points: list[ChartPoint]
+    realised_returns: list[dict[str, str]] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -182,5 +181,5 @@ class ChartComparisonResponse(BaseModel):
 
 class BriefResponse(BaseModel):
     run_id: str
-    brief: Optional[Brief] = None
+    brief: Brief | None = None
     cached: bool

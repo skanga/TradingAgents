@@ -1,12 +1,15 @@
-from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
-from tradingagents.agents.utils.response_integrity import invoke_complete_text
-from tradingagents.agents.utils.debate_evidence import DEBATE_EVIDENCE_INSTRUCTION
-from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block
 from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
     opponent_argument_or_opening,
 )
+from tradingagents.agents.utils.debate_evidence import DEBATE_EVIDENCE_INSTRUCTION
+from tradingagents.agents.utils.prompt_boundaries import (
+    UNTRUSTED_CONTENT_INSTRUCTION,
+    evidence_block,
+)
+from tradingagents.agents.utils.response_integrity import invoke_complete_text
+from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
 
 
 def create_aggressive_debator(llm):

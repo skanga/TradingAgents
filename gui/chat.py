@@ -19,7 +19,8 @@ generator so Streamlit's ``st.write_stream`` can render token-by-token.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Generator, Iterable, List, Optional
+from collections.abc import Generator, Iterable
+from typing import Any
 
 from gui.config import load as load_config
 
@@ -42,7 +43,7 @@ def bootstrap_env() -> None:
 # Prompt construction
 # ---------------------------------------------------------------------------
 
-def _meta_summary(meta: Dict[str, Any]) -> str:
+def _meta_summary(meta: dict[str, Any]) -> str:
     parts = [
         f"Ticker: {meta.get('ticker', '?')}",
         f"Trade date: {meta.get('trade_date', '?')}",
@@ -56,11 +57,11 @@ def _meta_summary(meta: Dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def _state_as_text(state: Dict[str, Any]) -> str:
+def _state_as_text(state: dict[str, Any]) -> str:
     """Render the run state as a structured text block for the system prompt."""
-    sections: List[str] = []
+    sections: list[str] = []
 
-    def _add(label: str, body: Optional[str]) -> None:
+    def _add(label: str, body: str | None) -> None:
         if body:
             sections.append(f"## {label}\n\n{body}\n")
 
@@ -89,11 +90,11 @@ def _state_as_text(state: Dict[str, Any]) -> str:
     return "\n".join(sections)
 
 
-def _tool_trace_summary(trace: List[Dict[str, Any]]) -> str:
+def _tool_trace_summary(trace: list[dict[str, Any]]) -> str:
     """Compact one-liner per tool call. Skipped if trace is empty (legacy archive)."""
     if not trace:
         return ""
-    lines: List[str] = []
+    lines: list[str] = []
     for entry in trace:
         tool = entry.get("tool", "?")
         inp = (entry.get("input") or "").replace("\n", " ")[:160]
@@ -102,8 +103,8 @@ def _tool_trace_summary(trace: List[Dict[str, Any]]) -> str:
     return "## Tool calls (data the agents pulled in)\n\n" + "\n".join(lines) + "\n"
 
 
-def system_prompt(state: Dict[str, Any], meta: Dict[str, Any],
-                  tool_trace: Optional[List[Dict[str, Any]]] = None) -> str:
+def system_prompt(state: dict[str, Any], meta: dict[str, Any],
+                  tool_trace: list[dict[str, Any]] | None = None) -> str:
     pieces = [
         "You are a financial research assistant answering questions about a "
         "completed multi-agent stock analysis. Your context below contains the "
@@ -125,7 +126,7 @@ def system_prompt(state: Dict[str, Any], meta: Dict[str, Any],
 # LLM client + streaming
 # ---------------------------------------------------------------------------
 
-def _llm_settings(meta: Optional[Dict[str, Any]] = None) -> tuple[str, str, Optional[str]]:
+def _llm_settings(meta: dict[str, Any] | None = None) -> tuple[str, str, str | None]:
     cfg = load_config()
     defaults = cfg.get("defaults", {})
     run_meta = meta or {}
@@ -136,7 +137,7 @@ def _llm_settings(meta: Optional[Dict[str, Any]] = None) -> tuple[str, str, Opti
     return provider, model, backend_url
 
 
-def _build_llm(meta: Optional[Dict[str, Any]] = None) -> Any:
+def _build_llm(meta: dict[str, Any] | None = None) -> Any:
     """Create the quick-think LLM the user has configured.
 
     Reads provider + quick_think_llm from the GUI config defaults; falls
@@ -153,9 +154,9 @@ def _build_llm(meta: Optional[Dict[str, Any]] = None) -> Any:
     return client.get_llm()
 
 
-def stream_response(state: Dict[str, Any], meta: Dict[str, Any],
-                    history: Iterable[Dict[str, str]], question: str,
-                    tool_trace: Optional[List[Dict[str, Any]]] = None,
+def stream_response(state: dict[str, Any], meta: dict[str, Any],
+                    history: Iterable[dict[str, str]], question: str,
+                    tool_trace: list[dict[str, Any]] | None = None,
                     ) -> Generator[str, None, str]:
     """Stream the assistant's reply token-by-token.
 
@@ -166,7 +167,7 @@ def stream_response(state: Dict[str, Any], meta: Dict[str, Any],
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage  # type: ignore
 
     llm = _build_llm(meta)
-    msgs: List[Any] = [SystemMessage(content=system_prompt(state, meta, tool_trace))]
+    msgs: list[Any] = [SystemMessage(content=system_prompt(state, meta, tool_trace))]
     for h in history:
         role = h.get("role")
         content = h.get("content") or ""
@@ -199,7 +200,7 @@ def stream_response(state: Dict[str, Any], meta: Dict[str, Any],
     return full
 
 
-def quick_think_label(meta: Optional[Dict[str, Any]] = None) -> str:
+def quick_think_label(meta: dict[str, Any] | None = None) -> str:
     """Human-readable label for the model that will answer."""
     provider, model, _ = _llm_settings(meta)
     return f"{provider} · {model}"

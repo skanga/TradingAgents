@@ -14,12 +14,12 @@ when terminal events arrive.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from gui import runner as legacy_runner
-from gui import storage
+from gui import runner as legacy_runner, storage
 from gui.config import export_env, load as load_config
 
 
@@ -27,15 +27,15 @@ from gui.config import export_env, load as load_config
 class ManagedRun:
     run_id: str
     handle: legacy_runner.RunnerHandle
-    subscribers: List["asyncio.Queue[Dict[str, Any]]"] = field(default_factory=list)
-    history: List[Dict[str, Any]] = field(default_factory=list)
+    subscribers: list[asyncio.Queue[dict[str, Any]]] = field(default_factory=list)
+    history: list[dict[str, Any]] = field(default_factory=list)
     finished: bool = False
-    decision: Optional[str] = None
-    archive_path: Optional[str] = None
-    error: Optional[str] = None
-    warning: Optional[str] = None
+    decision: str | None = None
+    archive_path: str | None = None
+    error: str | None = None
+    warning: str | None = None
     terminal_event_seen: bool = False
-    stats: Dict[str, int] = field(default_factory=lambda: {
+    stats: dict[str, int] = field(default_factory=lambda: {
         "llm_calls": 0, "tool_calls": 0, "tokens_in": 0, "tokens_out": 0,
     })
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -45,8 +45,8 @@ class RunnerPool:
     """Singleton-ish registry. Module-level instance below."""
 
     def __init__(self) -> None:
-        self._runs: Dict[str, ManagedRun] = {}
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._runs: dict[str, ManagedRun] = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._lock = threading.Lock()
 
     def attach_loop(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -54,7 +54,7 @@ class RunnerPool:
 
     # ---- Lifecycle ----------------------------------------------------
 
-    def start(self, *, run_id: str, job: Dict[str, Any]) -> ManagedRun:
+    def start(self, *, run_id: str, job: dict[str, Any]) -> ManagedRun:
         cfg = load_config()
         env = export_env(cfg)
         # Inject run_id so the worker writes the right archive path.
@@ -74,7 +74,7 @@ class RunnerPool:
         ).start()
         return managed
 
-    def get(self, run_id: str) -> Optional[ManagedRun]:
+    def get(self, run_id: str) -> ManagedRun | None:
         with self._lock:
             return self._runs.get(run_id)
 
@@ -92,14 +92,14 @@ class RunnerPool:
 
     # ---- Subscriptions ------------------------------------------------
 
-    async def subscribe(self, run_id: str) -> "asyncio.Queue[Dict[str, Any]]":
+    async def subscribe(self, run_id: str) -> asyncio.Queue[dict[str, Any]]:
         """Return a queue that will receive every event for this run.
 
         Pre-existing events (sent before subscription) are replayed first
         so a late-arriving client still sees a full transcript.
         """
         managed = self.get(run_id)
-        q: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue()
+        q: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         if not managed:
             await q.put({"type": "error", "data": {"message": f"unknown run {run_id}"}})
             await q.put({"type": "_eof", "data": {}})
@@ -113,15 +113,12 @@ class RunnerPool:
                 managed.subscribers.append(q)
         return q
 
-    def unsubscribe(self, run_id: str, q: "asyncio.Queue[Dict[str, Any]]") -> None:
+    def unsubscribe(self, run_id: str, q: asyncio.Queue[dict[str, Any]]) -> None:
         managed = self.get(run_id)
         if not managed:
             return
-        with managed._lock:
-            try:
-                managed.subscribers.remove(q)
-            except ValueError:
-                pass
+        with managed._lock, contextlib.suppress(ValueError):
+            managed.subscribers.remove(q)
 
     # ---- Internal -----------------------------------------------------
 
@@ -143,7 +140,7 @@ class RunnerPool:
         self._finalize_eventless_exit(managed)
         self._mark_finished(managed)
 
-    def _ingest(self, managed: ManagedRun, raw: Dict[str, Any]) -> None:
+    def _ingest(self, managed: ManagedRun, raw: dict[str, Any]) -> None:
         # Normalise to {type, data} envelope expected by the schema.
         kind = raw.get("type", "log")
         data = {k: v for k, v in raw.items() if k != "type"}
@@ -180,15 +177,13 @@ class RunnerPool:
             elif kind == "error":
                 managed.terminal_event_seen = True
                 managed.error = data.get("message", "unknown error")
-                try:
+                with contextlib.suppress(Exception):
                     storage.finalize_run(
                         managed.run_id,
                         decision=None,
                         log_path=None,
                         error=managed.error,
                     )
-                except Exception:
-                    pass
             subs = list(managed.subscribers)
 
         for q in subs:
@@ -227,10 +222,8 @@ class RunnerPool:
         direct call if no loop has been attached (shouldn't happen in
         normal operation but keeps unit tests simple)."""
         if self._loop is None or not self._loop.is_running():
-            try:
+            with contextlib.suppress(Exception):
                 fn(*args, **kwargs)
-            except Exception:
-                pass
             return
         self._loop.call_soon_threadsafe(fn, *args, **kwargs)
 

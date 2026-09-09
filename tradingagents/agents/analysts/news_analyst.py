@@ -1,7 +1,4 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from tradingagents.agents.utils.response_integrity import invoke_complete_tool_or_text, response_text
-from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block, evidence_history
-from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
 
 from tradingagents.agents.utils.agent_utils import (
     get_global_news,
@@ -11,6 +8,16 @@ from tradingagents.agents.utils.agent_utils import (
     get_news,
     get_prediction_markets,
 )
+from tradingagents.agents.utils.prompt_boundaries import (
+    UNTRUSTED_CONTENT_INSTRUCTION,
+    evidence_block,
+    evidence_history,
+)
+from tradingagents.agents.utils.response_integrity import (
+    invoke_complete_tool_or_text,
+    response_text,
+)
+from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
 
 
 def create_news_analyst(llm):

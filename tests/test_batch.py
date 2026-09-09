@@ -1,5 +1,5 @@
-import json
 import inspect
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from cli.main import app
 from cli.models import AnalystType
+from tradingagents.allocation import build_allocation_plan
 from tradingagents.batch import (
     BatchTickerResult,
     PortfolioHolding,
@@ -16,7 +17,6 @@ from tradingagents.batch import (
     run_batch_analysis,
     write_batch_outputs,
 )
-from tradingagents.allocation import build_allocation_plan
 
 
 class CapturingConsole:

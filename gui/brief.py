@@ -20,13 +20,12 @@ Why quick-think and not deep-think:
 from __future__ import annotations
 
 import sqlite3
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from gui import storage
 from gui.chat import _build_llm, bootstrap_env
-
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -94,13 +93,13 @@ class Brief(BaseModel):
             "May be 'no explicit target — review at <date/condition>'."
         )
     )
-    triggers: List[Trigger] = Field(
+    triggers: list[Trigger] = Field(
         description=(
             "3-7 specific if-then trigger points the user should watch for. "
             "These are the 'tripwires' that should drive action."
         )
     )
-    key_risks: List[str] = Field(
+    key_risks: list[str] = Field(
         description=(
             "3-5 main risks to this thesis, written in plain English. "
             "What would make this trade fail?"
@@ -153,11 +152,11 @@ _PROMPT_HEADER = (
 )
 
 
-def _state_text_for_brief(state: Dict[str, Any]) -> str:
+def _state_text_for_brief(state: dict[str, Any]) -> str:
     """Compact textual rendering of the run state for the brief prompt."""
-    pieces: List[str] = []
+    pieces: list[str] = []
 
-    def add(label: str, body: Optional[str]) -> None:
+    def add(label: str, body: str | None) -> None:
         if body:
             pieces.append(f"## {label}\n\n{body}\n")
 
@@ -186,7 +185,7 @@ def _state_text_for_brief(state: Dict[str, Any]) -> str:
     return "\n".join(pieces)
 
 
-def generate_brief(state: Dict[str, Any], meta: Dict[str, Any]) -> Brief:
+def generate_brief(state: dict[str, Any], meta: dict[str, Any]) -> Brief:
     """Run the LLM call to produce a structured brief.
 
     Doesn't touch any cache. Callers should normally use ``get_brief``.
@@ -234,7 +233,7 @@ def _ensure_column() -> None:
     _BRIEF_COLUMN_INITIALIZED = True
 
 
-def get_cached_brief(run_id: str) -> Optional[Brief]:
+def get_cached_brief(run_id: str) -> Brief | None:
     """Return the cached brief for a run, or ``None`` if none generated yet."""
     if not run_id:
         return None
@@ -262,8 +261,8 @@ def store_brief(run_id: str, brief: Brief) -> None:
         c.commit()
 
 
-def get_or_generate_brief(run_id: str, state: Dict[str, Any],
-                          meta: Dict[str, Any]) -> Brief:
+def get_or_generate_brief(run_id: str, state: dict[str, Any],
+                          meta: dict[str, Any]) -> Brief:
     """Return the cached brief or generate one (and cache it)."""
     cached = get_cached_brief(run_id)
     if cached is not None:

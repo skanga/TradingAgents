@@ -9,8 +9,7 @@ import os
 
 import pytest
 from langchain_core.messages import HumanMessage
-from pydantic import BaseModel
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 
 from tradingagents.llm_clients.openai_client import MinimaxChatOpenAI
 

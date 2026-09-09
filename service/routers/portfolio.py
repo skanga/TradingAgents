@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+import contextlib
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -19,35 +19,35 @@ class Position(BaseModel):
     shares: float
     cost_basis_per_share: float
     opened_at: str
-    closed_at: Optional[str] = None
-    closing_price: Optional[float] = None
-    account: Optional[str] = None
-    notes: Optional[str] = None
+    closed_at: str | None = None
+    closing_price: float | None = None
+    account: str | None = None
+    notes: str | None = None
 
 
 class PositionCreateRequest(BaseModel):
     ticker: str = Field(min_length=1, max_length=32)
     shares: float = Field(gt=0)
     cost_basis_per_share: float = Field(gt=0)
-    opened_at: Optional[str] = None
-    account: Optional[str] = None
-    notes: Optional[str] = None
+    opened_at: str | None = None
+    account: str | None = None
+    notes: str | None = None
 
 
 class PositionUpdateRequest(BaseModel):
-    shares: Optional[float] = Field(default=None, gt=0)
-    cost_basis_per_share: Optional[float] = Field(default=None, gt=0)
-    account: Optional[str] = None
-    notes: Optional[str] = None
+    shares: float | None = Field(default=None, gt=0)
+    cost_basis_per_share: float | None = Field(default=None, gt=0)
+    account: str | None = None
+    notes: str | None = None
 
 
 class PositionCloseRequest(BaseModel):
     closing_price: float = Field(gt=0)
-    closed_at: Optional[str] = None
+    closed_at: str | None = None
 
 
-@router.get("/positions", response_model=List[Position])
-def list_positions(include_closed: bool = False) -> List[Position]:
+@router.get("/positions", response_model=list[Position])
+def list_positions(include_closed: bool = False) -> list[Position]:
     return [Position(**p) for p in storage.list_positions(include_closed=include_closed)]
 
 
@@ -62,10 +62,8 @@ async def create_position(req: PositionCreateRequest) -> Position:
         notes=req.notes,
     )
     # Warm the price stream so summary shows live value immediately.
-    try:
+    with contextlib.suppress(Exception):
         await broadcaster.warm_ticker(req.ticker, source=f"position:{pid}")
-    except Exception:
-        pass
     row = storage.get_position(pid)
     if not row:
         raise HTTPException(status_code=500, detail="position not retrievable")

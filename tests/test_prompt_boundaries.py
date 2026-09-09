@@ -93,7 +93,7 @@ def test_downstream_reports_and_memory_are_delimited_without_mutating_history(fa
 
 
 def test_history_total_budget_includes_delimiters():
-    from tradingagents.agents.utils.prompt_boundaries import evidence_history, MAX_HISTORY_CHARS
+    from tradingagents.agents.utils.prompt_boundaries import MAX_HISTORY_CHARS, evidence_history
     history = [HumanMessage(content="&" * 20000) for _ in range(20)]
     bounded = evidence_history(history)
     assert sum(len(m.content) for m in bounded) <= MAX_HISTORY_CHARS
@@ -110,7 +110,7 @@ def test_escaping_removes_control_spoofing_and_preserves_source_identity():
 
 
 def test_history_does_not_drop_messages_or_truncate_tool_arguments():
-    from tradingagents.agents.utils.prompt_boundaries import evidence_history, MAX_HISTORY_MESSAGES
+    from tradingagents.agents.utils.prompt_boundaries import MAX_HISTORY_MESSAGES, evidence_history
     with pytest.raises(ValueError, match="message budget"):
         evidence_history([HumanMessage(content="x")] * (MAX_HISTORY_MESSAGES + 1))
     with pytest.raises(ValueError, match="metadata"):

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 from fastapi import APIRouter, HTTPException
 
 from gui import storage
@@ -12,12 +10,12 @@ from service.schemas import Note, NoteCreateRequest, NoteUpdateRequest
 router = APIRouter(prefix="/notes", tags=["notes"])
 
 
-@router.get("", response_model=List[Note])
+@router.get("", response_model=list[Note])
 def list_notes(
-    ticker: Optional[str] = None,
-    run_id: Optional[str] = None,
-    q: Optional[str] = None,
-) -> List[Note]:
+    ticker: str | None = None,
+    run_id: str | None = None,
+    q: str | None = None,
+) -> list[Note]:
     rows = storage.list_notes(ticker=ticker, run_id=run_id, query=q)
     return [Note(**r) for r in rows]
 

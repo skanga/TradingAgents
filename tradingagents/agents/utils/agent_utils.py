@@ -107,8 +107,8 @@ def resolve_instrument_identity(ticker: str, curr_date: str | None = None) -> di
     The symbol is normalized first (e.g. ``XAUUSD`` -> ``GC=F``) so identity
     resolves for the same instrument the price path actually fetches (#983).
     """
-    from tradingagents.dataflows.symbol_utils import normalize_symbol
     from tradingagents.dataflows.date_window import withhold_live_profile
+    from tradingagents.dataflows.symbol_utils import normalize_symbol
 
     if withhold_live_profile(curr_date, ticker):
         return {}

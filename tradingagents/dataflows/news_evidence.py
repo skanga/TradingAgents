@@ -5,10 +5,9 @@ import json
 from contextlib import contextmanager
 from contextvars import ContextVar
 from threading import RLock
-
-from .config import get_config
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from .config import get_config
 from .date_window import to_utc
 
 _run_cache: ContextVar[tuple[dict, RLock] | None] = ContextVar("news_run_cache", default=None)

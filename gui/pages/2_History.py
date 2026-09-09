@@ -12,8 +12,7 @@ from typing import Any, cast
 import pandas as pd
 import streamlit as st
 
-from gui import brief as brief_mod
-from gui import chat, charts, export, storage
+from gui import brief as brief_mod, charts, chat, export, storage
 from gui.log_browser import discover_logs, load_archive_full, load_log
 from gui.md_utils import safe_md
 
@@ -380,7 +379,7 @@ tab_labels = [
 ]
 tabs = st.tabs([t[0] for t in tab_labels])
 
-for tab, (label, content) in zip(tabs, tab_labels):
+for tab, (label, content) in zip(tabs, tab_labels, strict=False):
     with tab:
         if label == "Bull vs Bear":
             d = state.get("investment_debate_state") or {}

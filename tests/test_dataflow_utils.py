@@ -1,6 +1,6 @@
-from datetime import datetime
 import inspect
 import logging
+from datetime import datetime
 
 import pandas as pd
 

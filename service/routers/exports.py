@@ -9,19 +9,17 @@ Layout matches the existing on-disk structure:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from gui import export as export_mod
-from gui import storage
+from gui import export as export_mod, storage
 from gui.log_browser import load_log
 
 router = APIRouter(prefix="/runs", tags=["exports"])
 
 
-def _meta_for_run(run_id: str) -> tuple[Dict, str]:
+def _meta_for_run(run_id: str) -> tuple[dict, str]:
     row = storage.get_run(run_id)
     if not row:
         raise HTTPException(status_code=404, detail="run not found")
@@ -49,9 +47,9 @@ def _meta_for_run(run_id: str) -> tuple[Dict, str]:
 
 
 @router.get("/{run_id}/exports")
-def list_run_exports(run_id: str) -> List[dict]:
+def list_run_exports(run_id: str) -> list[dict]:
     meta, log_path = _meta_for_run(run_id)
-    out: List[dict] = []
+    out: list[dict] = []
 
     # JSON archive — already on disk, point to the source file.
     archive_path = Path(log_path)
@@ -129,7 +127,7 @@ def download_export(run_id: str, ext: str) -> FileResponse:
 
 
 @router.post("/{run_id}/exports/regenerate")
-def regenerate_exports(run_id: str) -> List[dict]:
+def regenerate_exports(run_id: str) -> list[dict]:
     """Force fresh md/html/pdf renders. Old files stay on disk (timestamped)."""
     meta, log_path = _meta_for_run(run_id)
     state = load_log(log_path)

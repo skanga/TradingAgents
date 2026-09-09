@@ -1,7 +1,7 @@
 """Reusable Markdown report-tree writer for CLI and programmatic runs."""
 
-from datetime import datetime
 import json
+from datetime import datetime
 from pathlib import Path
 
 

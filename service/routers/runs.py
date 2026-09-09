@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
-from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from gui import storage
 from gui.log_browser import discover_logs, load_archive_full
-from tradingagents.dataflows.utils import safe_ticker_component
 from service.runner_pool import pool
 from service.schemas import RunCreateRequest, RunDetail, RunSummary
+from tradingagents.dataflows.utils import safe_ticker_component
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -49,8 +49,8 @@ def create_run(req: RunCreateRequest) -> RunSummary:
     return RunSummary(**db_row)
 
 
-@router.get("", response_model=List[RunSummary])
-def list_runs(ticker: Optional[str] = None, limit: int = 200) -> List[RunSummary]:
+@router.get("", response_model=list[RunSummary])
+def list_runs(ticker: str | None = None, limit: int = 200) -> list[RunSummary]:
     rows = storage.list_runs(ticker=ticker, limit=limit)
     return [RunSummary(**r) for r in rows]
 
@@ -115,7 +115,5 @@ async def stream_run(ws: WebSocket, run_id: str) -> None:
         pass
     finally:
         pool.unsubscribe(run_id, q)
-        try:
+        with contextlib.suppress(RuntimeError):
             await ws.close()
-        except RuntimeError:
-            pass

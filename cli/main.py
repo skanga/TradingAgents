@@ -1,14 +1,13 @@
 import datetime
-from html import escape
 import inspect
 import os
 import sys
+import textwrap
 import time
 from collections import deque
-import questionary
+from html import escape
 from pathlib import Path
-from typing import Any, TypedDict, cast
-import textwrap
+from typing import Annotated, Any, TypedDict, cast
 
 import typer
 from dotenv import find_dotenv, load_dotenv
@@ -22,24 +21,24 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.spinner import Spinner
-from rich.text import Text
 from rich.table import Table
+from rich.text import Text
 
-from cli.announcements import fetch_announcements, display_announcements
+from cli.announcements import display_announcements, fetch_announcements
 from cli.llm_config import LLMConfigOverrides, ResolvedLLMConfig, resolve_llm_config
 from cli.models import AnalystType
 from cli.stats_handler import StatsCallbackHandler
 from cli.utils import (
     ask_anthropic_effort,
-    ask_glm_region,
     ask_gemini_thinking_config,
+    ask_glm_region,
     ask_minimax_region,
-    ensure_api_key,
     ask_openai_reasoning_effort,
     ask_output_language,
     ask_qwen_region,
     confirm_ollama_endpoint,
     detect_asset_type,
+    ensure_api_key,
     filter_analysts_for_asset_type,
     get_ticker,
     normalize_ticker_symbol,
@@ -49,13 +48,13 @@ from cli.utils import (
     select_research_depth,
     select_shallow_thinking_agent,
 )
+from tradingagents.allocation import AllocationPolicy
 from tradingagents.batch import (
     AnalysisRunResult,
+    SelectionOverrides,
     load_batch_inputs,
     run_batch_analysis,
-    SelectionOverrides,
 )
-from tradingagents.allocation import AllocationPolicy
 from tradingagents.charts import ChartArtifact, generate_report_charts
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution import DryRunExecutor, ExecutionAction, ExecutionOrder
@@ -290,7 +289,7 @@ class MessageBuffer:
             if content is not None:
                 latest_section = section
                 latest_content = content
-               
+
         if latest_section and latest_content:
             # Format the current section for display
             section_titles = {
@@ -666,7 +665,7 @@ def get_user_selections(
         )
 
     # Display ASCII art welcome message
-    with open(Path(__file__).parent / "static" / "welcome.txt", "r", encoding="utf-8") as f:
+    with open(Path(__file__).parent / "static" / "welcome.txt", encoding="utf-8") as f:
         welcome_ascii = f.read()
 
     # Create welcome box content
@@ -1393,9 +1392,8 @@ def update_analyst_statuses(message_buffer, chunk, wall_time_tracker=None):
             message_buffer.update_agent_status(agent_name, "pending")
 
     # When all analysts complete, transition research team to in_progress
-    if not found_active and selected:
-        if message_buffer.agent_status.get("Bull Researcher") == "pending":
-            message_buffer.update_agent_status("Bull Researcher", "in_progress")
+    if not found_active and selected and message_buffer.agent_status.get("Bull Researcher") == "pending":
+        message_buffer.update_agent_status("Bull Researcher", "in_progress")
 
 def extract_content_string(content):
     """Extract string content from various message formats.
@@ -1725,16 +1723,15 @@ def run_analysis(
                     message_buffer.update_report_section(
                         "final_trade_decision", f"### Neutral Analyst Analysis\n{neu_hist}"
                     )
-                if judge:
-                    if message_buffer.agent_status.get("Portfolio Manager") != "completed":
-                        message_buffer.update_agent_status("Portfolio Manager", "in_progress")
-                        message_buffer.update_report_section(
-                            "final_trade_decision", f"### Portfolio Manager Decision\n{judge}"
-                        )
-                        message_buffer.update_agent_status("Aggressive Analyst", "completed")
-                        message_buffer.update_agent_status("Conservative Analyst", "completed")
-                        message_buffer.update_agent_status("Neutral Analyst", "completed")
-                        message_buffer.update_agent_status("Portfolio Manager", "completed")
+                if judge and message_buffer.agent_status.get("Portfolio Manager") != "completed":
+                    message_buffer.update_agent_status("Portfolio Manager", "in_progress")
+                    message_buffer.update_report_section(
+                        "final_trade_decision", f"### Portfolio Manager Decision\n{judge}"
+                    )
+                    message_buffer.update_agent_status("Aggressive Analyst", "completed")
+                    message_buffer.update_agent_status("Conservative Analyst", "completed")
+                    message_buffer.update_agent_status("Neutral Analyst", "completed")
+                    message_buffer.update_agent_status("Portfolio Manager", "completed")
 
             # Update the display
             update_display(layout, message_buffer, stats_handler=stats_handler, start_time=start_time)
@@ -1758,7 +1755,7 @@ def run_analysis(
         message_buffer.add_message("System", analyst_wall_time_tracker.format_summary())
 
         # Update final report sections
-        for section in message_buffer.report_sections.keys():
+        for section in message_buffer.report_sections:
             if section in final_state:
                 message_buffer.update_report_section(section, final_state[section])
 
@@ -1896,11 +1893,9 @@ def analyze(
         "--save-report/--no-save-report",
         help="Save the final report after analysis.",
     ),
-    save_path: Path | None = typer.Option(
-        None,
-        "--save-path",
-        help="Directory where the report should be saved.",
-    ),
+    save_path: Annotated[Path | None, typer.Option(
+        "--save-path", help="Directory where the report should be saved.",
+    )] = None,
     display_report: bool | None = typer.Option(
         None,
         "--display-report/--no-display-report",
@@ -2021,11 +2016,9 @@ def main_callback(
         "--save-report/--no-save-report",
         help="Save the final report after analysis.",
     ),
-    save_path: Path | None = typer.Option(
-        None,
-        "--save-path",
-        help="Directory where the report should be saved.",
-    ),
+    save_path: Annotated[Path | None, typer.Option(
+        "--save-path", help="Directory where the report should be saved.",
+    )] = None,
     display_report: bool | None = typer.Option(
         None,
         "--display-report/--no-display-report",
@@ -2057,11 +2050,9 @@ def main_callback(
 
 @app.command("batch")
 def batch_command(
-    input_path: Path | None = typer.Option(
-        None,
-        "--input",
-        help="CSV or JSON portfolio/watchlist file. CSV/JSON must include ticker.",
-    ),
+    input_path: Annotated[Path | None, typer.Option(
+        "--input", help="CSV or JSON portfolio/watchlist file. CSV/JSON must include ticker.",
+    )] = None,
     tickers: str | None = typer.Option(
         None,
         "--tickers",
@@ -2127,11 +2118,9 @@ def batch_command(
         "--anthropic-effort",
         help="Anthropic effort level.",
     ),
-    save_path: Path | None = typer.Option(
-        None,
-        "--save-path",
-        help="Batch output directory.",
-    ),
+    save_path: Annotated[Path | None, typer.Option(
+        "--save-path", help="Batch output directory.",
+    )] = None,
     display_report: bool = typer.Option(
         False,
         "--display-report/--no-display-report",

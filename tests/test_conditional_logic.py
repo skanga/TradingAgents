@@ -1,5 +1,5 @@
-from langchain_core.messages import AIMessage, HumanMessage
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage
 
 from tradingagents.graph.conditional_logic import ConditionalLogic
 

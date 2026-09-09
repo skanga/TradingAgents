@@ -1,3 +1,4 @@
+import contextlib
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -22,10 +23,8 @@ def _enrich_news(response: str, start_date: str, end_date: str) -> str:
         if not isinstance(item, dict):
             raise VendorError("Alpha Vantage news feed contains a malformed article")
         published = None
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             published = datetime.strptime(item.get("time_published", ""), "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
-        except (ValueError, TypeError):
-            pass
         if not in_window(published, start, end):
             continue
         identity = evidence_id({"title": item.get("title", ""), "publisher": item.get("source", ""),

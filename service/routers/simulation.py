@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import yfinance as yf
@@ -51,10 +51,10 @@ class SimTrade(BaseModel):
 
 
 class SimRunRequest(BaseModel):
-    name: Optional[str] = None
-    base_run_id: Optional[str] = None
+    name: str | None = None
+    base_run_id: str | None = None
     starting_capital: float = Field(default=10000.0)
-    trades: List[SimTrade]
+    trades: list[SimTrade]
     # Look-back for drift / vol estimate.
     history_days: int = Field(default=180, ge=30, le=365 * 5)
 
@@ -76,20 +76,20 @@ class SimResult(BaseModel):
     baseline_return_pct: float
     alpha_pct: float
     horizon_days: int
-    points: List[SimPoint]
-    per_trade: List[Dict[str, Any]]
+    points: list[SimPoint]
+    per_trade: list[dict[str, Any]]
 
 
 class SimRow(BaseModel):
     id: int
-    name: Optional[str] = None
-    base_run_id: Optional[str] = None
-    ticker: Optional[str] = None
+    name: str | None = None
+    base_run_id: str | None = None
+    ticker: str | None = None
     created_at: str
 
 
 class SimDetail(SimRow):
-    scenario: Dict[str, Any]
+    scenario: dict[str, Any]
     result: SimResult
 
 
@@ -117,7 +117,7 @@ def _simulate(req: SimRunRequest) -> SimResult:
     horizon = max(t.hold_days for t in req.trades)
 
     # Per-trade stats.
-    per_trade_stats: List[Dict[str, Any]] = []
+    per_trade_stats: list[dict[str, Any]] = []
     for t in req.trades:
         mu, sigma = _stats(t.ticker, req.history_days)
         per_trade_stats.append({
@@ -129,7 +129,7 @@ def _simulate(req: SimRunRequest) -> SimResult:
 
     # Daily projection.
     daily_factor = 1.0 / 252
-    points: List[SimPoint] = []
+    points: list[SimPoint] = []
     total_invested = sum(s["cost"] for s in per_trade_stats)
     cash = max(0.0, req.starting_capital - total_invested)
 
@@ -138,7 +138,7 @@ def _simulate(req: SimRunRequest) -> SimResult:
         port_value = cash
         port_low = cash
         port_high = cash
-        for t, s in zip(req.trades, per_trade_stats):
+        for t, s in zip(req.trades, per_trade_stats, strict=False):
             d = min(day, t.hold_days)
             drift = np.exp(s["mu_annual"] * d * daily_factor)
             band = s["sigma_annual"] * np.sqrt(d * daily_factor)  # 1-sigma band
@@ -204,8 +204,8 @@ def run_simulation(req: SimRunRequest) -> SimDetail:
     )
 
 
-@router.get("", response_model=List[SimRow])
-def list_sims() -> List[SimRow]:
+@router.get("", response_model=list[SimRow])
+def list_sims() -> list[SimRow]:
     return [SimRow(**r) for r in storage.list_simulations()]
 
 

@@ -33,11 +33,11 @@ import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.outputs import LLMResult
 from langchain_core.messages import AIMessage
+from langchain_core.outputs import LLMResult
 
 from tradingagents.dataflows.news_evidence import news_run_scope
 
@@ -50,7 +50,7 @@ def _utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def emit(event: Dict[str, Any]) -> None:
+def emit(event: dict[str, Any]) -> None:
     """Write one NDJSON event to stdout and flush."""
     sys.stdout.write(json.dumps(event, default=str) + "\n")
     sys.stdout.flush()
@@ -71,10 +71,10 @@ class GuiCallbackHandler(BaseCallbackHandler):
         self.tokens_in = 0
         self.tokens_out = 0
         self._last_emit = 0.0
-        self.tool_trace: List[Dict[str, Any]] = []
-        self._pending_tool: Optional[Dict[str, Any]] = None
+        self.tool_trace: list[dict[str, Any]] = []
+        self._pending_tool: dict[str, Any] | None = None
 
-    def _stats_snapshot(self) -> Dict[str, int]:
+    def _stats_snapshot(self) -> dict[str, int]:
         return {
             "llm_calls": self.llm_calls,
             "tool_calls": self.tool_calls,
@@ -89,11 +89,11 @@ class GuiCallbackHandler(BaseCallbackHandler):
         self._last_emit = now
         emit({"type": "stats", **self._stats_snapshot()})
 
-    def on_llm_start(self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any) -> None:
+    def on_llm_start(self, serialized: dict[str, Any], prompts: list[str], **kwargs: Any) -> None:
         self.llm_calls += 1
         self._maybe_emit_stats()
 
-    def on_chat_model_start(self, serialized: Dict[str, Any], messages: List[List[Any]], **kwargs: Any) -> None:
+    def on_chat_model_start(self, serialized: dict[str, Any], messages: list[list[Any]], **kwargs: Any) -> None:
         self.llm_calls += 1
         self._maybe_emit_stats()
 
@@ -112,7 +112,7 @@ class GuiCallbackHandler(BaseCallbackHandler):
             self.tokens_out += usage_metadata.get("output_tokens", 0) or 0
         self._maybe_emit_stats()
 
-    def on_tool_start(self, serialized: Dict[str, Any], input_str: str, **kwargs: Any) -> None:
+    def on_tool_start(self, serialized: dict[str, Any], input_str: str, **kwargs: Any) -> None:
         self.tool_calls += 1
         tool_name = (serialized or {}).get("name") or "unknown"
         self._pending_tool = {
@@ -134,7 +134,7 @@ class GuiCallbackHandler(BaseCallbackHandler):
         emit({"type": "tool_end", "preview": text[:500]})
         self._maybe_emit_stats()
 
-    def on_chain_start(self, serialized: Dict[str, Any], inputs: Dict[str, Any], **kwargs: Any) -> None:
+    def on_chain_start(self, serialized: dict[str, Any], inputs: dict[str, Any], **kwargs: Any) -> None:
         name = (serialized or {}).get("name")
         if not name:
             return
@@ -142,7 +142,7 @@ class GuiCallbackHandler(BaseCallbackHandler):
             return
         emit({"type": "node_start", "node": name})
 
-    def on_chain_end(self, outputs: Dict[str, Any], **kwargs: Any) -> None:
+    def on_chain_end(self, outputs: dict[str, Any], **kwargs: Any) -> None:
         return  # node_end fires too noisily; rely on chunk + done
 
 
@@ -157,7 +157,7 @@ SECTION_KEYS = (
 )
 
 
-def _emit_chunk(chunk: Dict[str, Any], prev_seen: Dict[str, str]) -> None:
+def _emit_chunk(chunk: dict[str, Any], prev_seen: dict[str, str]) -> None:
     """Pull the latest message + any new section reports out of a LangGraph chunk.
 
     The graph streams in ``values`` mode so each chunk is a full state dict.
@@ -201,7 +201,7 @@ def _emit_chunk(chunk: Dict[str, Any], prev_seen: Dict[str, str]) -> None:
         content = getattr(last, "content", None)
         if content:
             if isinstance(content, list):
-                parts: List[str] = []
+                parts: list[str] = []
                 for p in content:
                     if isinstance(p, dict):
                         parts.append(p.get("text", "") or p.get("content", "") or "")
@@ -213,7 +213,7 @@ def _emit_chunk(chunk: Dict[str, Any], prev_seen: Dict[str, str]) -> None:
 
 
 @news_run_scope()
-def run(job: Dict[str, Any]) -> None:
+def run(job: dict[str, Any]) -> None:
     ticker = job["ticker"]
     trade_date = job["trade_date"]
     started_iso = _utc_iso()
@@ -223,9 +223,9 @@ def run(job: Dict[str, Any]) -> None:
 
     # Imports here so any ImportError surfaces as an ``error`` event rather
     # than killing the worker before it can report.
-    from tradingagents.graph.trading_graph import TradingAgentsGraph
-    from tradingagents.default_config import DEFAULT_CONFIG
     from tradingagents.dataflows.utils import safe_ticker_component
+    from tradingagents.default_config import DEFAULT_CONFIG
+    from tradingagents.graph.trading_graph import TradingAgentsGraph
 
     safe_ticker_component(ticker)  # validate; raises ValueError otherwise
 
@@ -272,8 +272,8 @@ def run(job: Dict[str, Any]) -> None:
     init_state = ta.propagator.create_initial_state(ticker, trade_date, past_context=past_context)
     args = ta.propagator.get_graph_args()
 
-    final_state: Optional[Dict[str, Any]] = None
-    prev_seen: Dict[str, str] = {}
+    final_state: dict[str, Any] | None = None
+    prev_seen: dict[str, str] = {}
     try:
         for chunk in ta.graph.stream(init_state, **args):
             _emit_chunk(chunk, prev_seen)
@@ -290,7 +290,7 @@ def run(job: Dict[str, Any]) -> None:
         emit({"type": "error", "message": "graph produced no output"})
         return
 
-    setattr(ta, "curr_state", final_state)
+    ta.curr_state = final_state
 
     # Compute the canonical path the same way ``_log_state`` does so we can
     # archive after writing.
@@ -300,7 +300,7 @@ def run(job: Dict[str, Any]) -> None:
     # Write the canonical state log. If this fails we still try to archive
     # whatever we have, and we still emit ``done`` — the analysis itself
     # succeeded; a log-write failure shouldn't paint the run red.
-    log_warning: Optional[str] = None
+    log_warning: str | None = None
     try:
         ta._log_state(trade_date, final_state)
     except Exception as e:
@@ -313,7 +313,7 @@ def run(job: Dict[str, Any]) -> None:
     # run metadata (provider, models, timing, tokens) and the full tool-call
     # trace, so months from now you can answer "which news did the analyst
     # actually see?" without having to re-run.
-    archive_path: Optional[Path] = None
+    archive_path: Path | None = None
     run_id = job.get("run_id") or "norunid"
     archive_dir = report_dir / "runs"
     completed_iso = _utc_iso()
@@ -371,9 +371,9 @@ def run(job: Dict[str, Any]) -> None:
     })
 
 
-def _state_for_archive(state: Dict[str, Any]) -> Dict[str, Any]:
+def _state_for_archive(state: dict[str, Any]) -> dict[str, Any]:
     """Strip non-serialisable bits out of a graph state for direct JSON write."""
-    out: Dict[str, Any] = {}
+    out: dict[str, Any] = {}
     for k, v in state.items():
         if k == "messages":
             continue  # message objects are not JSON-friendly

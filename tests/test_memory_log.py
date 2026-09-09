@@ -1,7 +1,5 @@
 """Tests for TradingMemoryLog — storage, deferred reflection, PM injection, legacy removal."""
 
-import pytest
-import pandas as pd
 import json
 import threading
 import weakref

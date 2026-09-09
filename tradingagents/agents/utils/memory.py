@@ -10,7 +10,6 @@ from collections import Counter
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
 from tradingagents.agents.utils.outcomes import format_outcome, score_outcome
 from tradingagents.agents.utils.rating import RATING_REVIEW, extract_rating, parse_actionable_rating
@@ -23,11 +22,11 @@ def _valid_learning_entry(entry: dict) -> bool:
     rating = parse_actionable_rating(decision)
     # Older logs used imperative prose ("Buy NVDA.") rather than a label.
     # Retain these only when the initial rating agrees with the stored tag.
-    if rating == RATING_REVIEW and not re.search(r"\brating\b", decision, re.IGNORECASE):
-        if re.match(r"^(Buy|Overweight|Hold|Underweight|Sell)\s+", decision, re.IGNORECASE):
-            words = re.findall(r"\b(Buy|Overweight|Hold|Underweight|Sell)\b", decision, re.IGNORECASE)
-            if len({word.lower() for word in words}) == 1:
-                rating = extract_rating(decision)
+    if (rating == RATING_REVIEW and not re.search(r"\brating\b", decision, re.IGNORECASE)
+            and re.match(r"^(Buy|Overweight|Hold|Underweight|Sell)\s+", decision, re.IGNORECASE)):
+        words = re.findall(r"\b(Buy|Overweight|Hold|Underweight|Sell)\b", decision, re.IGNORECASE)
+        if len({word.lower() for word in words}) == 1:
+            rating = extract_rating(decision)
     return rating != RATING_REVIEW and rating == entry.get("rating")
 
 
@@ -73,7 +72,7 @@ class TradingMemoryLog:
         # Optional cap on resolved entries. None disables rotation.
         self._max_entries = cfg.get("memory_log_max_entries")
         self._entries_cache_mtime_ns: int | None = None
-        self._entries_cache: List[dict] | None = None
+        self._entries_cache: list[dict] | None = None
 
     # --- Write path (Phase A) ---
 
@@ -119,7 +118,7 @@ class TradingMemoryLog:
 
     # --- Read path (Phase A) ---
 
-    def load_entries(self) -> List[dict]:
+    def load_entries(self) -> list[dict]:
         """Parse all entries from log. Returns list of dicts."""
         if not self._log_path or not self._log_path.exists():
             self._invalidate_entries_cache()
@@ -137,7 +136,7 @@ class TradingMemoryLog:
         self._entries_cache = deepcopy(entries)
         return entries
 
-    def get_pending_entries(self, *, namespace: str | None = None) -> List[dict]:
+    def get_pending_entries(self, *, namespace: str | None = None) -> list[dict]:
         """Return pending entries; unscoped calls are for legacy/audit clients."""
         if namespace is not None:
             _namespace(namespace)
@@ -151,9 +150,8 @@ class TradingMemoryLog:
             _namespace(namespace)
             if as_of is None:
                 raise ValueError("Namespaced memory context requires as_of")
-        if as_of is not None:
-            if datetime.strptime(as_of, "%Y-%m-%d").strftime("%Y-%m-%d") != as_of:
-                raise ValueError("as_of must use YYYY-MM-DD")
+        if as_of is not None and datetime.strptime(as_of, "%Y-%m-%d").strftime("%Y-%m-%d") != as_of:
+            raise ValueError("as_of must use YYYY-MM-DD")
         entries = [
             e for e in self.load_entries()
             if not e.get("pending") and _valid_learning_entry(e)
@@ -195,7 +193,7 @@ class TradingMemoryLog:
 
     # --- Update path (Phase B) ---
 
-    def batch_update_with_outcomes(self, updates: List[dict]) -> None:
+    def batch_update_with_outcomes(self, updates: list[dict]) -> None:
         """Apply multiple outcome updates in a single read + atomic write.
 
         Each element of updates must have keys: ticker, trade_date,
@@ -257,12 +255,12 @@ class TradingMemoryLog:
         self._entries_cache_mtime_ns = None
         self._entries_cache = None
 
-    def _read_entries_uncached(self) -> List[dict]:
+    def _read_entries_uncached(self) -> list[dict]:
         if not self._log_path or not self._log_path.exists():
             return []
 
         text = self._log_path.read_text(encoding="utf-8")
-        json_entries: List[dict] = []
+        json_entries: list[dict] = []
         legacy_lines: list[str] = []
         for line in text.splitlines():
             stripped = line.strip()
@@ -282,7 +280,7 @@ class TradingMemoryLog:
                 legacy_entries.append(parsed)
         return legacy_entries + json_entries
 
-    def _serialize_jsonl(self, entries: List[dict]) -> str:
+    def _serialize_jsonl(self, entries: list[dict]) -> str:
         lines = []
         for entry in entries:
             payload = {
@@ -303,7 +301,7 @@ class TradingMemoryLog:
             lines.append(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
         return "\n".join(lines) + ("\n" if lines else "")
 
-    def _parse_jsonl_entry(self, line: str) -> Optional[dict]:
+    def _parse_jsonl_entry(self, line: str) -> dict | None:
         try:
             payload = json.loads(line)
         except json.JSONDecodeError:
@@ -365,7 +363,7 @@ class TradingMemoryLog:
             if tmp_path.exists():
                 tmp_path.unlink()
 
-    def _apply_rotation_entries(self, entries: List[dict]) -> List[dict]:
+    def _apply_rotation_entries(self, entries: list[dict]) -> list[dict]:
         """Drop oldest resolved entries per namespace when count exceeds max_entries.
 
         Pending entries are always kept (they represent unprocessed work).
@@ -378,7 +376,7 @@ class TradingMemoryLog:
                                   if not entry.get("pending"))
         to_drop = {namespace: max(0, count - self._max_entries)
                    for namespace, count in resolved_counts.items()}
-        kept: List[dict] = []
+        kept: list[dict] = []
         for entry in entries:
             namespace = entry.get("namespace", "legacy")
             if not entry.get("pending") and to_drop.get(namespace, 0) > 0:
@@ -387,7 +385,7 @@ class TradingMemoryLog:
             kept.append(entry)
         return kept
 
-    def _parse_legacy_entry(self, raw: str) -> Optional[dict]:
+    def _parse_legacy_entry(self, raw: str) -> dict | None:
         lines = raw.strip().splitlines()
         if not lines:
             return None
@@ -415,7 +413,7 @@ class TradingMemoryLog:
         entry["reflection"] = reflection_match.group(1).strip() if reflection_match else ""
         return entry
 
-    def _parse_legacy_tag(self, tag_line: str) -> Optional[dict]:
+    def _parse_legacy_tag(self, tag_line: str) -> dict | None:
         if not (tag_line.startswith("[") and tag_line.endswith("]")):
             return None
 

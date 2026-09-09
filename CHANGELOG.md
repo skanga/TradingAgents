@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [0.5.0] — 2026-09-09
+
+Analysis-integrity safeguards and mandatory human review for this fork.
+
+### Breaking changes
+
+- Standard runtime graphs return **REVIEW**, even for unanimous or Hold proposals.
+  Approval remains manual outside the application; no model can authorize execution.
+- Exposure-changing proposals receive up to two extra prompt-isolated assessments
+  against frozen analyst evidence, requiring visible source quotes and acknowledged gaps.
+  Disagreement or unusable output is never silently converted to Hold.
+- Reviewed/invalid batch results cannot generate allocations or enter new learning memory.
+  Checkpoint identity includes the new review policy; existing memories are not migrated.
+
+### Added and fixed
+
+- Deterministic outcome classifications, strict response validation, point-in-time memory
+  namespaces and trusted historical tool boundaries.
+- Shared news IDs/provenance and fallback, bounded social samples and conservative
+  near-duplicate screening, untrusted prompt boundaries and isolated debate rounds.
+- Frozen sensitivity evaluation, separately recorded synthetic-case experiments, and
+  bounded runtime decision audits with leading report warnings.
+- CI installs service dependencies for API tests and the conditional TOML backport for
+  Python 3.10. Lint findings repaired without disabling the configured rules.
+- Package metadata aligned to 0.5.0; recorded evaluation artifacts preserve exact bytes.
+
+### Limitations and remaining work
+
+- Genuine frozen evidence and independent human grounding review are still needed.
+  Any further model evaluation requires a new explicit budget; earlier budgets are exhausted.
+- Previous experiments measure the underlying Portfolio Manager, not the new review gate.
+  Bias reduction, universal injection resistance and trading accuracy remain unproven.
+- Historical statements without reliable publication/as-published vintages remain unavailable.
+  Authenticated in-app approval is an optional future extension.
+
+See `DECISION_REVIEW.md`, `FIX_PLAN_AUDIT.md`, and `EVALUATION.md` for details.
+
 ## [0.4.0] — 2026-08-31
 
 Look-ahead and point-in-time fixes across the data and memory layers, clearer

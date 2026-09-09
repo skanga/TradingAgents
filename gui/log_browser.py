@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -24,7 +24,7 @@ def results_dir() -> Path:
 
 
 @st.cache_data(ttl=30, show_spinner=False)
-def discover_logs() -> List[Dict[str, Any]]:
+def discover_logs() -> list[dict[str, Any]]:
     """Walk the results directory and return one entry per state-log file.
 
     Cached for 30 seconds — long enough that clicking around the History
@@ -45,7 +45,7 @@ def discover_logs() -> List[Dict[str, Any]]:
     base = results_dir()
     if not base.exists():
         return []
-    entries: List[Dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
     for ticker_dir in sorted(p for p in base.iterdir() if p.is_dir()):
         log_dir = ticker_dir / "TradingAgentsStrategy_logs"
         if not log_dir.exists():
@@ -98,7 +98,7 @@ def discover_logs() -> List[Dict[str, Any]]:
     return entries
 
 
-def load_log(path: str | Path) -> Optional[Dict[str, Any]]:
+def load_log(path: str | Path) -> dict[str, Any] | None:
     """Load a state log and unwrap GUI archive envelopes.
 
     Three on-disk shapes coexist:
@@ -114,7 +114,7 @@ def load_log(path: str | Path) -> Optional[Dict[str, Any]]:
     if not p.exists():
         return None
     try:
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
@@ -123,7 +123,7 @@ def load_log(path: str | Path) -> Optional[Dict[str, Any]]:
     return data
 
 
-def load_archive_full(path: str | Path) -> Optional[Dict[str, Any]]:
+def load_archive_full(path: str | Path) -> dict[str, Any] | None:
     """Load a state log without unwrapping. Returns the full envelope when
     the file is a GUI archive; returns ``{"state": ..., "metadata": {}}``
     for legacy / canonical files so callers can use one shape."""
@@ -131,7 +131,7 @@ def load_archive_full(path: str | Path) -> Optional[Dict[str, Any]]:
     if not p.exists():
         return None
     try:
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
         return None

@@ -7,8 +7,8 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 
 import tradingagents.agents as agents
-from tradingagents.graph.propagation import Propagator
 from tradingagents.graph.conditional_logic import ConditionalLogic
+from tradingagents.graph.propagation import Propagator
 
 
 @pytest.mark.parametrize("factory", ["create_news_analyst", "create_market_analyst", "create_fundamentals_analyst", "create_sentiment_analyst"])
@@ -30,8 +30,8 @@ def test_analysts_request_evidence_not_transaction_proposals(monkeypatch, factor
 
 
 def test_neutral_is_substantive_and_missing_data_is_not_neutral():
-    from tradingagents.agents.schemas import SentimentReport
     from tradingagents.agents.analysts.sentiment_analyst import _build_system_message
+    from tradingagents.agents.schemas import SentimentReport
     schema = SentimentReport.model_fields["overall_band"].description
     prompt = _build_system_message(ticker="AAPL", start_date="2024-01-01", end_date="2024-01-15",
                                    news_block="", stocktwits_block="", reddit_block="")
@@ -67,7 +67,7 @@ def _workflow(monkeypatch, rounds, **compile_kwargs):
 def test_actual_graph_gives_independent_openings_and_equal_completed_rounds(monkeypatch, rounds):
     graph, captured = _workflow(monkeypatch, rounds)
     result = graph.invoke(Propagator().create_initial_state("AAPL", "2024-01-15"), {"recursion_limit": 100})
-    for speaker, prompts in captured.items():
+    for prompts in captured.values():
         assert len(prompts) == rounds
         assert "UNIQUE_" not in prompts[0]  # every opener uses only analyst evidence
         for index, prompt in enumerate(prompts[1:], start=2):
@@ -109,7 +109,7 @@ def test_judge_gives_each_role_equal_budget_and_ignores_chronological_order(fact
     state = Propagator().create_initial_state("AAPL", "2024-01-15")
     state.update(investment_plan="plan", trader_investment_plan="plan")
     histories = [f"ROLE_{role}: " + "x" * 15000 for role in roles]
-    state[key].update({f"{role}_history": text for role, text in zip(roles, histories)})
+    state[key].update({f"{role}_history": text for role, text in zip(roles, histories, strict=False)})
     state[key]["history"] = "\n".join(histories)
     node(state)
     first = llm.invoke.call_args.args[0]
@@ -138,14 +138,15 @@ def test_debate_roles_can_concede_unsupported_claims(factory):
 ])
 def test_counterbalanced_openings_have_identical_role_prompts(key, roles, factories):
     from itertools import permutations
+
     from tradingagents.graph.debate_rounds import round_isolated_debater
     baseline = None
     for order in permutations(roles):
         prompts = {}
         nodes = {}
-        for role, factory in zip(roles, factories):
+        for role, factory in zip(roles, factories, strict=False):
             llm = Mock()
-            llm.invoke.side_effect = lambda prompt, role=role: prompts.setdefault(role, prompt) and AIMessage(content=f"opening-{role}")
+            llm.invoke.side_effect = lambda prompt, role=role, prompts=prompts: prompts.setdefault(role, prompt) and AIMessage(content=f"opening-{role}")
             nodes[role] = round_isolated_debater(getattr(agents, factory)(llm), key, role, roles)
         state = Propagator().create_initial_state("AAPL", "2024-01-15")
         state["trader_investment_plan"] = "plan"

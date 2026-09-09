@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from importlib.resources import files
 from string import Formatter
-from typing import Mapping
 
 
 def load_prompt_template(template_name: str) -> str:

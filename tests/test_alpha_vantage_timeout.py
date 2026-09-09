@@ -85,9 +85,8 @@ def test_alpha_vantage_timeout_raises_temporary_error(monkeypatch):
     with patch(
         "tradingagents.dataflows.alpha_vantage_common.requests.get",
         side_effect=requests.Timeout,
-    ):
-        with pytest.raises(AlphaVantageTemporaryError):
-            _make_api_request("TIME_SERIES_DAILY_ADJUSTED", {"symbol": "AAPL"})
+    ), pytest.raises(AlphaVantageTemporaryError):
+        _make_api_request("TIME_SERIES_DAILY_ADJUSTED", {"symbol": "AAPL"})
 
 
 def test_alpha_vantage_csv_filter_failure_never_returns_untrimmed_data():

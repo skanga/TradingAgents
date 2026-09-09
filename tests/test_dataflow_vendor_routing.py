@@ -2,8 +2,8 @@ import pytest
 import requests
 from yfinance.exceptions import YFRateLimitError
 
-from tradingagents.dataflows.config import reset_config, use_config
 from tradingagents.dataflows import interface
+from tradingagents.dataflows.config import reset_config, use_config
 from tradingagents.dataflows.interface import get_vendor, route_to_vendor
 
 

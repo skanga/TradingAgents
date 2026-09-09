@@ -186,7 +186,7 @@ class TraderProposal(BaseModel):
         return _coerce_optional_float(v)
 
     @model_validator(mode="after")
-    def validate_stop_loss_direction(self) -> "TraderProposal":
+    def validate_stop_loss_direction(self) -> TraderProposal:
         if self.entry_price is None or self.stop_loss is None:
             return self
         if self.action == TraderAction.BUY and self.stop_loss >= self.entry_price:

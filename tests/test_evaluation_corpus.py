@@ -1,6 +1,6 @@
 """Synthetic corpus acceptance tests; no provider or captured-model claims."""
-from copy import deepcopy
 import json
+from copy import deepcopy
 from pathlib import Path
 from unittest.mock import Mock
 

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -23,11 +22,11 @@ router = APIRouter(prefix="/news", tags=["news"])
 
 
 # Per-ticker memoisation: ticker -> (timestamp, articles)
-_CACHE: Dict[str, Tuple[float, List[Dict]]] = {}
+_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _TTL = 300.0  # 5 minutes
 
 
-def _cached_articles(ticker: str) -> List[Dict]:
+def _cached_articles(ticker: str) -> list[dict]:
     now = time.time()
     cached = _CACHE.get(ticker)
     if cached and now - cached[0] < _TTL:
@@ -43,24 +42,24 @@ def _cached_articles(ticker: str) -> List[Dict]:
 class NewsArticle(BaseModel):
     ticker: str
     title: str
-    summary: Optional[str] = None
-    publisher: Optional[str] = None
-    link: Optional[str] = None
-    published_at: Optional[str] = None
+    summary: str | None = None
+    publisher: str | None = None
+    link: str | None = None
+    published_at: str | None = None
 
 
-@router.get("/feed", response_model=List[NewsArticle])
+@router.get("/feed", response_model=list[NewsArticle])
 def feed(
-    tickers: Optional[str] = Query(None, description="Comma-separated; default = watchlist"),
+    tickers: str | None = Query(None, description="Comma-separated; default = watchlist"),
     limit: int = Query(50, ge=1, le=500),
-) -> List[NewsArticle]:
+) -> list[NewsArticle]:
     if tickers:
         tlist = [t.strip().upper() for t in tickers.split(",") if t.strip()]
     else:
         tlist = [w["ticker"] for w in storage.list_watchlist()]
 
     seen_keys = set()
-    out: List[NewsArticle] = []
+    out: list[NewsArticle] = []
     for ticker in tlist:
         for a in _cached_articles(ticker):
             key = (a.get("title") or "")[:120].lower().strip()

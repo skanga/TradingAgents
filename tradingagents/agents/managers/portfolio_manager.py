@@ -11,18 +11,21 @@ back gracefully to free-text generation.
 from __future__ import annotations
 
 from tradingagents.agents.schemas import PortfolioDecision, render_pm_decision
-from tradingagents.agents.utils.debate_evidence import balanced_debate_evidence
-from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
-from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block
 from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
+)
+from tradingagents.agents.utils.debate_evidence import balanced_debate_evidence
+from tradingagents.agents.utils.prompt_boundaries import (
+    UNTRUSTED_CONTENT_INSTRUCTION,
+    evidence_block,
 )
 from tradingagents.agents.utils.structured import (
     NO_EXTERNAL_TOOLS,
     bind_structured,
     invoke_structured_or_freetext,
 )
+from tradingagents.dataflows.news_evidence import SHARED_NEWS_INSTRUCTION
 
 
 def build_portfolio_prompt(state, role_order=("aggressive", "conservative", "neutral")) -> str:

@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import List, Optional
 
 import pandas as pd
 import yfinance as yf
@@ -20,14 +19,14 @@ router = APIRouter(prefix="/calendar", tags=["calendar"])
 
 class CalendarEvent(BaseModel):
     date: str
-    ticker: Optional[str] = None
+    ticker: str | None = None
     kind: str       # earnings | dividend | run | ex_dividend
     title: str
-    detail: Optional[str] = None
-    payload: Optional[dict] = None
+    detail: str | None = None
+    payload: dict | None = None
 
 
-def _to_iso(d) -> Optional[str]:
+def _to_iso(d) -> str | None:
     if d is None:
         return None
     if isinstance(d, str):
@@ -39,13 +38,13 @@ def _to_iso(d) -> Optional[str]:
     return None
 
 
-def _earnings_for(ticker: str) -> List[CalendarEvent]:
+def _earnings_for(ticker: str) -> list[CalendarEvent]:
     """Pull next earnings date(s) from yfinance.
 
     yfinance exposes the calendar in two shapes depending on version:
     a dict (new) and a DataFrame (older). Handle both.
     """
-    out: List[CalendarEvent] = []
+    out: list[CalendarEvent] = []
     try:
         cal = yf.Ticker(ticker).calendar
     except Exception:
@@ -79,8 +78,8 @@ def _earnings_for(ticker: str) -> List[CalendarEvent]:
     return out
 
 
-def _dividends_for(ticker: str, start: date, end: date) -> List[CalendarEvent]:
-    out: List[CalendarEvent] = []
+def _dividends_for(ticker: str, start: date, end: date) -> list[CalendarEvent]:
+    out: list[CalendarEvent] = []
     try:
         ser = yf.Ticker(ticker).dividends
     except Exception:
@@ -103,9 +102,9 @@ def _dividends_for(ticker: str, start: date, end: date) -> List[CalendarEvent]:
     return out
 
 
-def _runs_in_range(start: date, end: date, tickers: Optional[List[str]] = None
-                   ) -> List[CalendarEvent]:
-    out: List[CalendarEvent] = []
+def _runs_in_range(start: date, end: date, tickers: list[str] | None = None
+                   ) -> list[CalendarEvent]:
+    out: list[CalendarEvent] = []
     rows = storage.list_runs(limit=10_000)
     for r in rows:
         td = r.get("trade_date") or ""
@@ -128,15 +127,15 @@ def _runs_in_range(start: date, end: date, tickers: Optional[List[str]] = None
     return out
 
 
-@router.get("", response_model=List[CalendarEvent])
+@router.get("", response_model=list[CalendarEvent])
 def calendar(
     from_: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to: str = Query(..., description="YYYY-MM-DD"),
-    tickers: Optional[str] = Query(None, description="Comma-separated tickers; default = watchlist"),
+    tickers: str | None = Query(None, description="Comma-separated tickers; default = watchlist"),
     include_runs: bool = True,
     include_earnings: bool = True,
     include_dividends: bool = True,
-) -> List[CalendarEvent]:
+) -> list[CalendarEvent]:
     start = datetime.strptime(from_, "%Y-%m-%d").date()
     end = datetime.strptime(to, "%Y-%m-%d").date()
 
@@ -145,7 +144,7 @@ def calendar(
     else:
         tlist = [w["ticker"] for w in storage.list_watchlist()]
 
-    events: List[CalendarEvent] = []
+    events: list[CalendarEvent] = []
 
     if include_earnings:
         for t in tlist:

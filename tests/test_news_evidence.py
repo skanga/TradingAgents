@@ -7,10 +7,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from tradingagents.dataflows import alpha_vantage_news, interface, yfinance_news
-from tradingagents.dataflows.config import use_config, reset_config
-from tradingagents.dataflows.errors import VendorError
 from tradingagents.agents.analysts.sentiment_analyst import _build_system_message
+from tradingagents.dataflows import alpha_vantage_news, interface, yfinance_news
+from tradingagents.dataflows.config import reset_config, use_config
+from tradingagents.dataflows.errors import VendorError
 
 
 def _article(url="https://example.com/story?utm_source=yahoo"):
@@ -111,8 +111,9 @@ def test_tool_executor_shares_news_across_contexts_and_parallel_calls(monkeypatc
     from langchain_core.messages import AIMessage
     from langgraph.graph import END, START, StateGraph
     from langgraph.prebuilt import ToolNode
-    from tradingagents.agents.utils.agent_states import AgentState
+
     from tradingagents.agents.utils import news_data_tools
+    from tradingagents.agents.utils.agent_states import AgentState
     from tradingagents.dataflows.news_evidence import news_run_scope
     route = Mock(return_value="shared snapshot")
     monkeypatch.setattr(news_data_tools, "route_to_vendor", route)
@@ -203,6 +204,7 @@ def test_alpha_global_news_uses_config_defaults_and_marks_empty_coverage(monkeyp
 ])
 def test_downstream_synthesis_does_not_treat_shared_news_as_independent(factory_name):
     from langchain_core.messages import AIMessage
+
     import tradingagents.agents as agents
     from tradingagents.graph.propagation import Propagator
     state = Propagator().create_initial_state("AAPL", "2024-01-15")

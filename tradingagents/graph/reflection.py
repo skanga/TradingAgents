@@ -3,9 +3,12 @@
 from typing import Any
 
 from tradingagents.agents.utils.outcomes import format_outcome, score_outcome
+from tradingagents.agents.utils.prompt_boundaries import (
+    UNTRUSTED_CONTENT_INSTRUCTION,
+    evidence_block,
+)
 from tradingagents.agents.utils.rating import parse_actionable_rating
 from tradingagents.agents.utils.response_integrity import invoke_complete_text
-from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block
 
 
 class Reflector:

@@ -4,8 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from tradingagents.dataflows import reddit, stocktwits
 from tradingagents.agents.analysts.sentiment_analyst import _build_system_message
+from tradingagents.dataflows import reddit, stocktwits
 
 
 class Response:

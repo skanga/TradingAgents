@@ -4,7 +4,6 @@ import re
 import unicodedata
 from collections import Counter
 
-
 MAX_POSTS_PER_AUTHOR = 3
 
 
@@ -21,7 +20,7 @@ def _normalized(value) -> str:
 # Conservative lexical screening, not semantic equivalence or bot detection.
 # Never compare truncated prefixes, and never extend clusters through duplicates.
 _MAX_NEAR_CANDIDATES = 300
-_PROTECTED_WORDS = set("no not never without cannot can't don't doesn't didn't isn't aren't wasn't weren't won't wouldn't shouldn't couldn't buy sell long short bullish bearish up down rise fall rises falls raised lowered increase decrease growth decline beat miss beats misses revenue earnings profit loss demand supply".split())
+_PROTECTED_WORDS = {"no", "not", "never", "without", "cannot", "can't", "don't", "doesn't", "didn't", "isn't", "aren't", "wasn't", "weren't", "won't", "wouldn't", "shouldn't", "couldn't", "buy", "sell", "long", "short", "bullish", "bearish", "up", "down", "rise", "fall", "rises", "falls", "raised", "lowered", "increase", "decrease", "growth", "decline", "beat", "miss", "beats", "misses", "revenue", "earnings", "profit", "loss", "demand", "supply"}
 
 
 def _near_features(content):

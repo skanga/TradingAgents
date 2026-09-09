@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import Annotated
 
 from fastapi import APIRouter, Query
 
@@ -18,7 +18,7 @@ def comparison(
     trade_date: str = Query(..., description="YYYY-MM-DD"),
     days_back: int = 90,
     days_forward: int = 180,
-    benchmarks: List[str] = Query(default=["SPY", "QQQ"]),
+    benchmarks: Annotated[tuple[str, ...], Query()] = ("SPY", "QQQ"),
 ) -> ChartComparisonResponse:
     df = charts_mod.build_comparison_frame(
         ticker, trade_date,

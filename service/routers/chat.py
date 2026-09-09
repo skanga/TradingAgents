@@ -14,22 +14,21 @@ WebSocket protocol:
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
-from typing import List
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from gui import chat as chat_mod
-from gui import storage
+from gui import chat as chat_mod, storage
 from gui.log_browser import load_archive_full, load_log
 from service.schemas import ChatMessage
 
 router = APIRouter(prefix="/runs", tags=["chat"])
 
 
-@router.get("/{run_id}/chat", response_model=List[ChatMessage])
-def list_messages(run_id: str) -> List[ChatMessage]:
+@router.get("/{run_id}/chat", response_model=list[ChatMessage])
+def list_messages(run_id: str) -> list[ChatMessage]:
     rows = storage.list_chat_messages(run_id)
     return [ChatMessage(**r) for r in rows]
 
@@ -100,7 +99,5 @@ async def stream_chat(ws: WebSocket, run_id: str) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        try:
+        with contextlib.suppress(RuntimeError):
             await ws.close()
-        except RuntimeError:
-            pass

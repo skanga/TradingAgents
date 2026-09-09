@@ -19,7 +19,7 @@ commits.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -32,9 +32,9 @@ router = APIRouter(prefix="/planner", tags=["planner"])
 
 class PlannerStatus(BaseModel):
     configured: bool
-    url: Optional[str] = None
+    url: str | None = None
     reachable: bool
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class SyncDiffEntry(BaseModel):
@@ -42,19 +42,19 @@ class SyncDiffEntry(BaseModel):
     account: str
     action: str  # create | update | unchanged
     planner_shares: float
-    planner_cost_basis: Optional[float] = None
-    existing_shares: Optional[float] = None
-    existing_cost_basis: Optional[float] = None
+    planner_cost_basis: float | None = None
+    existing_shares: float | None = None
+    existing_cost_basis: float | None = None
 
 
 class SyncResult(BaseModel):
     dry_run: bool
     fetched_holdings: int
     accounts: int
-    diff: List[SyncDiffEntry]
+    diff: list[SyncDiffEntry]
     applied: int = 0
     skipped: int = 0
-    errors: List[str] = []
+    errors: list[str] = []
 
 
 @router.get("/status", response_model=PlannerStatus)
@@ -75,7 +75,7 @@ def status() -> PlannerStatus:
     )
 
 
-def _account_label(account: Dict[str, Any]) -> str:
+def _account_label(account: dict[str, Any]) -> str:
     """Build a human-readable account label that doubles as our position
     ``account`` field. Matches by-name when re-syncing."""
     name = account.get("name") or account.get("nickname") or f"account_{account.get('id')}"
@@ -98,9 +98,9 @@ def sync(dry_run: bool = Query(True)) -> SyncResult:
         accounts = planner_client.list_accounts()
         holdings_resp = planner_client.list_holdings()
     except planner_client.PlannerClientError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
-    accounts_by_id: Dict[int, Dict[str, Any]] = {}
+    accounts_by_id: dict[int, dict[str, Any]] = {}
     for a in accounts:
         try:
             accounts_by_id[int(a["id"])] = a
@@ -111,13 +111,13 @@ def sync(dry_run: bool = Query(True)) -> SyncResult:
 
     # Index existing TA open positions by (ticker, account-string).
     existing = storage.list_positions(include_closed=False)
-    existing_by_key: Dict[tuple, Dict[str, Any]] = {}
+    existing_by_key: dict[tuple, dict[str, Any]] = {}
     for p in existing:
         key = ((p["ticker"] or "").upper(), p.get("account") or "")
         existing_by_key[key] = p
 
-    diff: List[SyncDiffEntry] = []
-    actions: List[Dict[str, Any]] = []  # what to do if not dry_run
+    diff: list[SyncDiffEntry] = []
+    actions: list[dict[str, Any]] = []  # what to do if not dry_run
 
     for h in holdings:
         ticker = (h.get("symbol") or "").upper()
@@ -177,7 +177,7 @@ def sync(dry_run: bool = Query(True)) -> SyncResult:
                 })
 
     applied = 0
-    errors: List[str] = []
+    errors: list[str] = []
     if not dry_run:
         for a in actions:
             try:

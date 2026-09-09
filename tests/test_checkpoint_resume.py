@@ -1,8 +1,8 @@
 """Test checkpoint resume: crash mid-analysis, re-run resumes from last node."""
 
-import unittest
 import shutil
 import tempfile
+import unittest
 from pathlib import Path
 from typing import TypedDict
 from uuid import uuid4
@@ -16,6 +16,7 @@ from tradingagents.graph.checkpointer import (
     has_checkpoint,
     thread_id,
 )
+
 
 class _SimpleState(TypedDict):
     count: int

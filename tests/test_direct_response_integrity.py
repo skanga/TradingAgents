@@ -7,8 +7,8 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 
 import tradingagents.agents as agents
-from tradingagents.graph.propagation import Propagator
 from tradingagents.agents.utils.response_integrity import IncompleteResponseError
+from tradingagents.graph.propagation import Propagator
 
 DEBATERS = ["create_bull_researcher", "create_bear_researcher", "create_aggressive_debator",
             "create_conservative_debator", "create_neutral_debator"]
@@ -112,6 +112,7 @@ def test_discarded_generation_does_not_duplicate_actual_tool_execution():
     from langchain_core.tools import tool
     from langgraph.graph import END, START, StateGraph
     from langgraph.prebuilt import ToolNode
+
     from tradingagents.agents.utils.agent_states import AgentState
     executed = []
 

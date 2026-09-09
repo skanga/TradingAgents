@@ -12,16 +12,20 @@ import json
 import logging
 import re
 import time
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from markdown_it import MarkdownIt
 
-from tradingagents.dataflows.utils import safe_ticker_component
+from tradingagents.agents.utils.prompt_boundaries import (
+    UNTRUSTED_CONTENT_INSTRUCTION,
+    evidence_block,
+)
 from tradingagents.agents.utils.rating import parse_actionable_rating
 from tradingagents.agents.utils.response_integrity import invoke_complete_text
-from tradingagents.agents.utils.prompt_boundaries import UNTRUSTED_CONTENT_INSTRUCTION, evidence_block
+from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.formatting import (
     format_number as _format_number,
     format_percent as _format_percent,
@@ -302,7 +306,7 @@ def write_batch_outputs(
     analysis_date: str,
     *,
     narrative: str | None = None,
-    allocation_plan: "AllocationPlan | None" = None,
+    allocation_plan: AllocationPlan | None = None,
 ) -> Path:
     save_path.mkdir(parents=True, exist_ok=True)
     markdown = build_batch_summary_markdown(
@@ -358,7 +362,7 @@ def run_batch_analysis(
     available_cash: float = 0.0,
     allocate: bool = False,
     dry_run: bool = False,
-    allocation_policy: "AllocationPolicy | None" = None,
+    allocation_policy: AllocationPolicy | None = None,
     prices: dict[str, float] | None = None,
     analysis_runner: Callable[..., AnalysisRunResult] | None = None,
     console: ConsoleLike | None = None,
@@ -485,7 +489,7 @@ def _derive_prices_from_holdings(results: Sequence[BatchTickerResult]) -> dict[s
     return derived
 
 
-def _print_dry_run_table(console: ConsoleLike, allocation_plan: "AllocationPlan") -> None:
+def _print_dry_run_table(console: ConsoleLike, allocation_plan: AllocationPlan) -> None:
     from rich.table import Table
 
     table = Table(title="Allocation Dry Run")
@@ -556,7 +560,7 @@ def _ranked_results(results: Sequence[BatchTickerResult]) -> list[BatchTickerRes
         key=lambda r: (
             r.status != "success",
             -RATING_RANK.get(r.rating or "Hold", 0),
-            -((r.holding.market_value if r.holding and r.holding.market_value is not None else 0.0)),
+            -(r.holding.market_value if r.holding and r.holding.market_value is not None else 0.0),
             r.ticker,
         ),
     )

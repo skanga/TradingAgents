@@ -1,8 +1,8 @@
 """Regression cases for invalid decisions and deterministic outcome evaluation."""
 
 import json
-from unittest.mock import Mock, patch
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest

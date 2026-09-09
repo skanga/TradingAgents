@@ -13,10 +13,11 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any
 
 DB_PATH = Path.home() / ".tradingagents" / "gui.db"
 
@@ -151,8 +152,8 @@ def create_run(
     quick_model: str,
     debate_rounds: int,
     risk_rounds: int,
-    vendors: Dict[str, str],
-    backend_url: Optional[str] = None,
+    vendors: dict[str, str],
+    backend_url: str | None = None,
 ) -> None:
     with _conn() as c:
         c.execute(
@@ -179,8 +180,8 @@ def update_run_stats(run_id: str, *, llm_calls: int, tool_calls: int,
         )
 
 
-def finalize_run(run_id: str, *, decision: Optional[str], log_path: Optional[str],
-                 error: Optional[str] = None, error_log_path: Optional[str] = None) -> None:
+def finalize_run(run_id: str, *, decision: str | None, log_path: str | None,
+                 error: str | None = None, error_log_path: str | None = None) -> None:
     status = "error" if error else "done"
     with _conn() as c:
         c.execute(
@@ -194,11 +195,11 @@ def finalize_run(run_id: str, *, decision: Optional[str], log_path: Optional[str
 def write_run_error_log(
     *,
     run_id: str,
-    meta: Dict[str, Any],
+    meta: dict[str, Any],
     message: str,
-    traceback_text: Optional[str] = None,
-    events: Optional[List[Dict[str, Any]]] = None,
-    stderr: Optional[List[str]] = None,
+    traceback_text: str | None = None,
+    events: list[dict[str, Any]] | None = None,
+    stderr: list[str] | None = None,
 ) -> Path:
     ticker = str(meta.get("ticker") or "UNKNOWN").strip().upper() or "UNKNOWN"
     trade_date = str(meta.get("trade_date") or "unknown")
@@ -220,13 +221,13 @@ def write_run_error_log(
     return path
 
 
-def get_run(run_id: str) -> Optional[Dict[str, Any]]:
+def get_run(run_id: str) -> dict[str, Any] | None:
     with _conn() as c:
         row = c.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
         return dict(row) if row else None
 
 
-def list_runs(*, ticker: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+def list_runs(*, ticker: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
     with _conn() as c:
         if ticker:
             rows = c.execute(
@@ -241,8 +242,8 @@ def list_runs(*, ticker: Optional[str] = None, limit: int = 100) -> List[Dict[st
         return [dict(r) for r in rows]
 
 
-def add_note(*, title: str, body: str, ticker: Optional[str] = None,
-             run_id: Optional[str] = None, tags: Optional[str] = None) -> int:
+def add_note(*, title: str, body: str, ticker: str | None = None,
+             run_id: str | None = None, tags: str | None = None) -> int:
     now = _now()
     with _conn() as c:
         cur = c.execute(
@@ -254,7 +255,7 @@ def add_note(*, title: str, body: str, ticker: Optional[str] = None,
         return int(cur.lastrowid)
 
 
-def update_note(note_id: int, *, title: str, body: str, tags: Optional[str]) -> None:
+def update_note(note_id: int, *, title: str, body: str, tags: str | None) -> None:
     with _conn() as c:
         c.execute(
             """UPDATE notes SET title=?, body=?, tags=?, updated_at=? WHERE id=?""",
@@ -267,10 +268,10 @@ def delete_note(note_id: int) -> None:
         c.execute("DELETE FROM notes WHERE id=?", (note_id,))
 
 
-def list_notes(*, ticker: Optional[str] = None, run_id: Optional[str] = None,
-               query: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_notes(*, ticker: str | None = None, run_id: str | None = None,
+               query: str | None = None) -> list[dict[str, Any]]:
     sql = "SELECT * FROM notes WHERE 1=1"
-    args: List[Any] = []
+    args: list[Any] = []
     if ticker:
         sql += " AND ticker=?"
         args.append(ticker)
@@ -287,7 +288,7 @@ def list_notes(*, ticker: Optional[str] = None, run_id: Optional[str] = None,
         return [dict(r) for r in rows]
 
 
-def get_note(note_id: int) -> Optional[Dict[str, Any]]:
+def get_note(note_id: int) -> dict[str, Any] | None:
     with _conn() as c:
         row = c.execute("SELECT * FROM notes WHERE id=?", (note_id,)).fetchone()
         return dict(row) if row else None
@@ -298,7 +299,7 @@ def get_note(note_id: int) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def add_chat_message(*, run_id: str, role: str, content: str,
-                     model: Optional[str] = None) -> int:
+                     model: str | None = None) -> int:
     with _conn() as c:
         cur = c.execute(
             """INSERT INTO chat_messages(run_id, role, content, created_at, model)
@@ -309,7 +310,7 @@ def add_chat_message(*, run_id: str, role: str, content: str,
         return int(cur.lastrowid)
 
 
-def list_chat_messages(run_id: str) -> List[Dict[str, Any]]:
+def list_chat_messages(run_id: str) -> list[dict[str, Any]]:
     with _conn() as c:
         rows = c.execute(
             "SELECT * FROM chat_messages WHERE run_id=? ORDER BY id ASC",
@@ -327,7 +328,7 @@ def clear_chat(run_id: str) -> None:
 # Watchlist (per-ticker subscription for live price/news streams)
 # ---------------------------------------------------------------------------
 
-def list_watchlist() -> List[Dict[str, Any]]:
+def list_watchlist() -> list[dict[str, Any]]:
     with _conn() as c:
         rows = c.execute(
             "SELECT * FROM watchlist ORDER BY ticker"
@@ -335,7 +336,7 @@ def list_watchlist() -> List[Dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
-def add_to_watchlist(ticker: str, notes: Optional[str] = None) -> Dict[str, Any]:
+def add_to_watchlist(ticker: str, notes: str | None = None) -> dict[str, Any]:
     ticker = ticker.strip().upper()
     with _conn() as c:
         c.execute(
@@ -359,7 +360,7 @@ def remove_from_watchlist(ticker: str) -> None:
 # Positions (long-form portfolio tracking)
 # ---------------------------------------------------------------------------
 
-def list_positions(*, include_closed: bool = False) -> List[Dict[str, Any]]:
+def list_positions(*, include_closed: bool = False) -> list[dict[str, Any]]:
     with _conn() as c:
         if include_closed:
             rows = c.execute("SELECT * FROM positions ORDER BY ticker, opened_at").fetchall()
@@ -370,15 +371,15 @@ def list_positions(*, include_closed: bool = False) -> List[Dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
-def get_position(position_id: int) -> Optional[Dict[str, Any]]:
+def get_position(position_id: int) -> dict[str, Any] | None:
     with _conn() as c:
         row = c.execute("SELECT * FROM positions WHERE id=?", (position_id,)).fetchone()
         return dict(row) if row else None
 
 
 def add_position(*, ticker: str, shares: float, cost_basis_per_share: float,
-                 opened_at: Optional[str] = None, account: Optional[str] = None,
-                 notes: Optional[str] = None) -> int:
+                 opened_at: str | None = None, account: str | None = None,
+                 notes: str | None = None) -> int:
     with _conn() as c:
         cur = c.execute(
             """INSERT INTO positions(ticker, shares, cost_basis_per_share,
@@ -392,7 +393,7 @@ def add_position(*, ticker: str, shares: float, cost_basis_per_share: float,
 
 
 def close_position(position_id: int, *, closing_price: float,
-                   closed_at: Optional[str] = None) -> None:
+                   closed_at: str | None = None) -> None:
     with _conn() as c:
         c.execute(
             """UPDATE positions SET closing_price=?, closed_at=? WHERE id=?""",
@@ -400,12 +401,12 @@ def close_position(position_id: int, *, closing_price: float,
         )
 
 
-def update_position(position_id: int, *, shares: Optional[float] = None,
-                    cost_basis_per_share: Optional[float] = None,
-                    account: Optional[str] = None, notes: Optional[str] = None
+def update_position(position_id: int, *, shares: float | None = None,
+                    cost_basis_per_share: float | None = None,
+                    account: str | None = None, notes: str | None = None
                     ) -> None:
     fields = []
-    args: List[Any] = []
+    args: list[Any] = []
     if shares is not None:
         fields.append("shares=?")
         args.append(float(shares))
@@ -434,7 +435,7 @@ def delete_position(position_id: int) -> None:
 # Simulations
 # ---------------------------------------------------------------------------
 
-def list_simulations() -> List[Dict[str, Any]]:
+def list_simulations() -> list[dict[str, Any]]:
     with _conn() as c:
         rows = c.execute(
             "SELECT * FROM simulations ORDER BY created_at DESC"
@@ -442,7 +443,7 @@ def list_simulations() -> List[Dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
-def add_simulation(*, name: str, base_run_id: Optional[str], ticker: Optional[str],
+def add_simulation(*, name: str, base_run_id: str | None, ticker: str | None,
                   scenario_json: str, result_json: str) -> int:
     with _conn() as c:
         cur = c.execute(
@@ -456,7 +457,7 @@ def add_simulation(*, name: str, base_run_id: Optional[str], ticker: Optional[st
         return int(cur.lastrowid)
 
 
-def get_simulation(sim_id: int) -> Optional[Dict[str, Any]]:
+def get_simulation(sim_id: int) -> dict[str, Any] | None:
     with _conn() as c:
         row = c.execute("SELECT * FROM simulations WHERE id=?", (sim_id,)).fetchone()
         return dict(row) if row else None

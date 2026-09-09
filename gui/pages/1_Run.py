@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import time
 from datetime import date
-from typing import Any, Dict, List, cast
+from typing import Any, cast
 
 import streamlit as st
 
-from gui import brief as brief_mod
-from gui import chat, charts, runner, storage
+from gui import brief as brief_mod, charts, chat, runner, storage
 from gui.config import (
     DATA_VENDORS,
     LLM_PROVIDERS,
@@ -63,16 +62,14 @@ def _reset() -> None:
     SS.run_warning = None
 
 
-def _ingest(events: List[Dict[str, Any]]) -> None:
+def _ingest(events: list[dict[str, Any]]) -> None:
     """Apply incoming events to session state."""
     for ev in events:
         SS.run_events.append(ev)
         t = ev.get("type")
         if t == "section":
             SS.run_sections[ev["key"]] = ev.get("content", "")
-        elif t == "debate":
-            SS.run_debates.setdefault(ev["side"], []).append(ev.get("content", ""))
-        elif t == "risk":
+        elif t == "debate" or t == "risk":
             SS.run_debates.setdefault(ev["side"], []).append(ev.get("content", ""))
         elif t == "stats":
             SS.run_stats = {k: ev.get(k, SS.run_stats.get(k, 0))
@@ -132,7 +129,7 @@ def _ingest(events: List[Dict[str, Any]]) -> None:
                                      error_log_path=str(error_log_path) if error_log_path else None)
 
 
-def _config_form() -> Dict[str, Any] | None:
+def _config_form() -> dict[str, Any] | None:
     cfg = load_config()
     defaults = cfg.get("defaults", {})
 
@@ -241,7 +238,7 @@ def _config_form() -> Dict[str, Any] | None:
         }
 
 
-def _start_run(job: Dict[str, Any]) -> None:
+def _start_run(job: dict[str, Any]) -> None:
     _reset()
     SS.run_id = storage.new_run_id()
     SS.run_meta = job
@@ -337,12 +334,11 @@ with action_col:
         if st.button("✕ Cancel", type="secondary"):
             SS.runner_handle.cancel()
             SS.run_error = "Cancelled by user."
-    elif SS.run_decision is not None or SS.run_error:
-        if st.button("Clear", type="secondary"):
-            if SS.runner_handle:
-                SS.runner_handle.cleanup()
-            _reset()
-            st.rerun()
+    elif (SS.run_decision is not None or SS.run_error) and st.button("Clear", type="secondary"):
+        if SS.runner_handle:
+            SS.runner_handle.cleanup()
+        _reset()
+        st.rerun()
 
 # ---------------------------------------------------------------------------
 # Tabs filled as sections complete.
@@ -365,7 +361,7 @@ tab_labels: list[tuple[str, str | None]] = [
 tabs = st.tabs([f"✓ {lbl}" if (key and sections.get(key)) else lbl
                 for lbl, key in tab_labels])
 
-for tab, (label, section_key) in zip(tabs, tab_labels):
+for tab, (label, section_key) in zip(tabs, tab_labels, strict=False):
     with tab:
         if label == "Bull vs Bear":
             bcol, ecol = st.columns(2)
@@ -555,23 +551,22 @@ if SS.run_id and SS.run_decision is not None:
 # ---------------------------------------------------------------------------
 if SS.run_id:
     st.divider()
-    with st.expander("Add a note about this run"):
-        with st.form("note_form", clear_on_submit=True):
-            note_title = st.text_input("Title")
-            note_body = st.text_area("Body (markdown)", height=120)
-            note_tags = st.text_input("Tags (comma-separated)")
-            if st.form_submit_button("Save note"):
-                if note_title.strip() and note_body.strip():
-                    storage.add_note(
-                        title=note_title.strip(),
-                        body=note_body,
-                        ticker=(SS.run_meta or {}).get("ticker"),
-                        run_id=SS.run_id,
-                        tags=note_tags or None,
-                    )
-                    st.success("Saved.")
-                else:
-                    st.warning("Title and body are required.")
+    with st.expander("Add a note about this run"), st.form("note_form", clear_on_submit=True):
+        note_title = st.text_input("Title")
+        note_body = st.text_area("Body (markdown)", height=120)
+        note_tags = st.text_input("Tags (comma-separated)")
+        if st.form_submit_button("Save note"):
+            if note_title.strip() and note_body.strip():
+                storage.add_note(
+                    title=note_title.strip(),
+                    body=note_body,
+                    ticker=(SS.run_meta or {}).get("ticker"),
+                    run_id=SS.run_id,
+                    tags=note_tags or None,
+                )
+                st.success("Saved.")
+            else:
+                st.warning("Title and body are required.")
 
 # ---------------------------------------------------------------------------
 # While the worker is alive, schedule a rerun every ~600ms to keep the UI

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
-from typing import Literal, Sequence
+from typing import Literal
 
 from tradingagents.batch import BatchTickerResult
 from tradingagents.formatting import (
@@ -11,7 +12,6 @@ from tradingagents.formatting import (
     format_percent as _format_percent,
     format_quantity as _format_quantity,
 )
-
 
 RecommendedAction = Literal["buy", "sell", "hold"]
 
@@ -145,18 +145,7 @@ def build_allocation_markdown(plan: AllocationPlan, analysis_date: str) -> str:
     ]
     for row in sorted(plan.rows, key=lambda candidate: candidate.rank):
         lines.append(
-            "| {rank} | {ticker} | {rating} | {action} | {current_value} | {current_weight} | {target_weight} | {delta_value} | {price} | {quantity_delta} |".format(
-                rank=row.rank,
-                ticker=row.ticker,
-                rating=row.rating,
-                action=row.recommended_action,
-                current_value=_format_number(row.current_value),
-                current_weight=_format_percent(row.current_weight),
-                target_weight=_format_percent(row.target_weight),
-                delta_value=_format_number(row.delta_value),
-                price=_format_number(row.price),
-                quantity_delta=_format_quantity(row.quantity_delta),
-            )
+            f"| {row.rank} | {row.ticker} | {row.rating} | {row.recommended_action} | {_format_number(row.current_value)} | {_format_percent(row.current_weight)} | {_format_percent(row.target_weight)} | {_format_number(row.delta_value)} | {_format_number(row.price)} | {_format_quantity(row.quantity_delta)} |"
         )
 
     lines.extend([

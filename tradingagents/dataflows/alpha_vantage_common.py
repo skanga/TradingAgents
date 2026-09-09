@@ -81,7 +81,7 @@ def _make_api_request(function_name: str, params: dict) -> str:
         "apikey": get_api_key(),
         "source": "trading_agents",
     })
-    
+
     # Keep only explicitly requested entitlement values.
     entitlement = api_params.get("entitlement")
     if entitlement:
@@ -89,7 +89,7 @@ def _make_api_request(function_name: str, params: dict) -> str:
     elif "entitlement" in api_params:
         # Remove entitlement if it's None or empty
         api_params.pop("entitlement", None)
-    
+
     try:
         response = requests.get(
             API_BASE_URL,

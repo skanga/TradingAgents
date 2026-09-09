@@ -18,7 +18,7 @@ this on Settings" message.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import requests
 
@@ -26,12 +26,12 @@ CONNECT_TIMEOUT = 5.0
 READ_TIMEOUT = 30.0
 
 
-def planner_url() -> Optional[str]:
+def planner_url() -> str | None:
     raw = (os.environ.get("PLANNER_API_URL") or "").strip().rstrip("/")
     return raw or None
 
 
-def planner_key() -> Optional[str]:
+def planner_key() -> str | None:
     raw = (os.environ.get("PLANNER_API_KEY") or "").strip()
     return raw or None
 
@@ -40,7 +40,7 @@ def is_configured() -> bool:
     return bool(planner_url() and planner_key())
 
 
-def _headers() -> Dict[str, str]:
+def _headers() -> dict[str, str]:
     key = planner_key() or ""
     return {
         "X-API-Key": key,
@@ -67,7 +67,7 @@ def _get(path: str) -> Any:
             timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
         )
     except requests.RequestException as e:
-        raise PlannerClientError(f"could not reach planner at {full}: {e}")
+        raise PlannerClientError(f"could not reach planner at {full}: {e}") from e
     if resp.status_code == 401:
         raise PlannerClientError(
             "planner returned 401 — check that PLANNER_API_KEY matches "
@@ -80,10 +80,10 @@ def _get(path: str) -> Any:
     try:
         return resp.json()
     except ValueError as e:
-        raise PlannerClientError(f"planner {path} returned non-JSON: {e}")
+        raise PlannerClientError(f"planner {path} returned non-JSON: {e}") from e
 
 
-def list_accounts() -> List[Dict[str, Any]]:
+def list_accounts() -> list[dict[str, Any]]:
     """Return all accounts known to the planner."""
     raw = _get("/api/accounts")
     if isinstance(raw, list):
@@ -93,7 +93,7 @@ def list_accounts() -> List[Dict[str, Any]]:
     raise PlannerClientError(f"unexpected /api/accounts shape: {type(raw)}")
 
 
-def list_holdings() -> Dict[str, Any]:
+def list_holdings() -> dict[str, Any]:
     """Return the planner's holdings response.
 
     Shape (from backend/routers/investments.py):
@@ -115,7 +115,7 @@ def list_holdings() -> Dict[str, Any]:
     return raw
 
 
-def healthcheck() -> Dict[str, Any]:
+def healthcheck() -> dict[str, Any]:
     """Lightweight probe — returns the (possibly anonymous) /api/health."""
     url = planner_url()
     if not url:

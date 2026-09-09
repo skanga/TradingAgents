@@ -1,13 +1,13 @@
 import datetime
-
-import cli.main
-import pytest
 from pathlib import Path
-from cli.models import AnalystType
-from cli.llm_config import LLMConfigOverrides, ResolvedLLMConfig, resolve_llm_config
+
+import pytest
 from typer.testing import CliRunner
 
+import cli.main
+from cli.llm_config import LLMConfigOverrides, ResolvedLLMConfig, resolve_llm_config
 from cli.main import app
+from cli.models import AnalystType
 
 
 def test_cli_loads_dotenv_from_user_cwd():

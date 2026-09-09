@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from typing import Any
 
 import requests
 from fastapi import APIRouter, HTTPException
@@ -28,7 +28,7 @@ def _ollama_api_base(url: str) -> str:
     return url
 
 
-def _detect_ollama_models(url: str, timeout: float = 5.0) -> List[Dict[str, Any]]:
+def _detect_ollama_models(url: str, timeout: float = 5.0) -> list[dict[str, Any]]:
     """Hit ``<url>/api/tags`` and return the list of installed models.
 
     Raises ``HTTPException`` on connection or HTTP errors with a message
@@ -41,7 +41,7 @@ def _detect_ollama_models(url: str, timeout: float = 5.0) -> List[Dict[str, Any]
         raise HTTPException(
             status_code=502,
             detail=f"could not reach Ollama at {base}: {e}",
-        )
+        ) from e
     if not resp.ok:
         raise HTTPException(
             status_code=502,
@@ -53,8 +53,8 @@ def _detect_ollama_models(url: str, timeout: float = 5.0) -> List[Dict[str, Any]
         raise HTTPException(
             status_code=502,
             detail="Ollama returned non-JSON; is the URL pointing at Ollama?",
-        )
-    out: List[Dict[str, Any]] = []
+        ) from None
+    out: list[dict[str, Any]] = []
     for m in (data.get("models") or []):
         out.append({
             "name": m.get("name") or m.get("model") or "",
@@ -66,7 +66,7 @@ def _detect_ollama_models(url: str, timeout: float = 5.0) -> List[Dict[str, Any]
     return out
 
 
-def _provider_keys_view(cfg_keys: Dict[str, str]) -> list[ProviderKey]:
+def _provider_keys_view(cfg_keys: dict[str, str]) -> list[ProviderKey]:
     out = []
     for provider, env_name in PROVIDER_KEYS.items():
         out.append(
@@ -92,7 +92,7 @@ def get_settings() -> SettingsResponse:
 
 
 @router.get("/ollama/models")
-def ollama_models(url: str | None = None) -> Dict[str, Any]:
+def ollama_models(url: str | None = None) -> dict[str, Any]:
     """List the models installed on the configured (or supplied) Ollama instance.
 
     If ``url`` is provided, test that URL — otherwise read ``defaults.ollama_base_url``

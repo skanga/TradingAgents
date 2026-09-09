@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 import questionary
-from dotenv import find_dotenv, set_key
+from dotenv import set_key
 from rich.console import Console
 
 from cli.models import AnalystType, AssetType

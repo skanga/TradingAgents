@@ -2,8 +2,8 @@ from typing import Annotated
 
 from langchain_core.tools import tool
 
-from tradingagents.dataflows.market_data_validator import build_verified_market_snapshot
 from tradingagents.agents.utils.tool_dates import RunState, bounded_date
+from tradingagents.dataflows.market_data_validator import build_verified_market_snapshot
 
 
 @tool

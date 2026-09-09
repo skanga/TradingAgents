@@ -8,11 +8,12 @@ take precedence when present so existing CLI workflows keep working.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import stat
 from pathlib import Path
-from typing import Any, Dict, cast
+from typing import Any, cast
 
 from tradingagents.default_config import DEFAULT_CONFIG
 
@@ -23,7 +24,7 @@ except Exception:  # pragma: no cover — surfaced as empty dropdowns
 
 GUI_CONFIG_PATH = Path.home() / ".tradingagents" / "gui_config.json"
 
-PROVIDER_KEYS: Dict[str, str] = {
+PROVIDER_KEYS: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
     "google": "GOOGLE_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
@@ -35,7 +36,7 @@ PROVIDER_KEYS: Dict[str, str] = {
     "alpha_vantage": "ALPHA_VANTAGE_API_KEY",
 }
 
-PROVIDER_LABELS: Dict[str, str] = {
+PROVIDER_LABELS: dict[str, str] = {
     "openai": "OpenAI (GPT)",
     "google": "Google (Gemini)",
     "anthropic": "Anthropic (Claude)",
@@ -57,8 +58,8 @@ LLM_PROVIDERS = [
 DATA_VENDORS = ["yfinance", "alpha_vantage"]
 
 
-def _empty_config() -> Dict[str, Any]:
-    data_vendors = cast(Dict[str, str], DEFAULT_CONFIG["data_vendors"])
+def _empty_config() -> dict[str, Any]:
+    data_vendors = cast(dict[str, str], DEFAULT_CONFIG["data_vendors"])
     defaults = {
         "llm_provider": DEFAULT_CONFIG["llm_provider"],
         "deep_think_llm": DEFAULT_CONFIG["deep_think_llm"],
@@ -80,12 +81,12 @@ def _empty_config() -> Dict[str, Any]:
     return {"api_keys": {}, "defaults": defaults, "ui": {}}
 
 
-def load() -> Dict[str, Any]:
+def load() -> dict[str, Any]:
     """Load the GUI config. Returns a fresh default config if none exists."""
     if not GUI_CONFIG_PATH.exists():
         return _empty_config()
     try:
-        with open(GUI_CONFIG_PATH, "r", encoding="utf-8") as f:
+        with open(GUI_CONFIG_PATH, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
         return _empty_config()
@@ -97,7 +98,7 @@ def load() -> Dict[str, Any]:
     return base
 
 
-def save(cfg: Dict[str, Any]) -> None:
+def save(cfg: dict[str, Any]) -> None:
     """Write GUI config to disk and chmod it to 0600 on POSIX.
 
     On Windows the chmod call still runs but only toggles the read-only bit;
@@ -107,10 +108,8 @@ def save(cfg: Dict[str, Any]) -> None:
     GUI_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(GUI_CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
-    try:
+    with contextlib.suppress(OSError):
         os.chmod(GUI_CONFIG_PATH, stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
 
 
 def resolve_api_key(provider: str) -> str | None:
@@ -128,7 +127,7 @@ def resolve_api_key(provider: str) -> str | None:
     return load().get("api_keys", {}).get(env_name)
 
 
-def model_choices_for(provider: str, mode: str) -> tuple[list[str], Dict[str, str]]:
+def model_choices_for(provider: str, mode: str) -> tuple[list[str], dict[str, str]]:
     """Return ``(values, labels)`` for a provider's model dropdown.
 
     ``mode`` is ``"deep"`` or ``"quick"``. ``values`` is the list of model
@@ -137,7 +136,7 @@ def model_choices_for(provider: str, mode: str) -> tuple[list[str], Dict[str, st
     for ``format_func``.
     """
     values: list[str] = []
-    labels: Dict[str, str] = {}
+    labels: dict[str, str] = {}
     by_mode = (MODEL_OPTIONS.get(provider) or {}).get(mode) or []
     for label, value in by_mode:
         if value == "custom":
@@ -149,7 +148,7 @@ def model_choices_for(provider: str, mode: str) -> tuple[list[str], Dict[str, st
     return values, labels
 
 
-def export_env(cfg: Dict[str, Any]) -> Dict[str, str]:
+def export_env(cfg: dict[str, Any]) -> dict[str, str]:
     """Build an env dict for subprocess launch.
 
     Starts from the parent process env, then overlays any keys stored in the

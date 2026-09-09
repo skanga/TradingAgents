@@ -26,11 +26,12 @@ let the client decide what to do with stale weekend data):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 import yfinance as yf
 
@@ -45,33 +46,33 @@ PRICE_HISTORY_LEN = 120    # in-memory recent ticks per ticker (~1 hour)
 class TickerState:
     """In-memory state for one watched ticker."""
     ticker: str
-    last_price: Optional[float] = None
-    last_change: Optional[float] = None
-    last_change_pct: Optional[float] = None
-    last_volume: Optional[int] = None
-    last_polled: Optional[float] = None
-    history: List[Dict[str, Any]] = field(default_factory=list)  # {ts, price}
-    last_news_titles: Set[str] = field(default_factory=set)
-    last_news_polled: Optional[float] = None
+    last_price: float | None = None
+    last_change: float | None = None
+    last_change_pct: float | None = None
+    last_volume: int | None = None
+    last_polled: float | None = None
+    history: list[dict[str, Any]] = field(default_factory=list)  # {ts, price}
+    last_news_titles: set[str] = field(default_factory=set)
+    last_news_polled: float | None = None
 
 
 class Broadcaster:
     """Singleton-ish: subscribers + per-ticker state + the polling loop."""
 
     def __init__(self) -> None:
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._lock = asyncio.Lock()
         # Per-channel subscribers: {channel: {ticker: [queue, ...]}}.
         # ``channel`` is "price" or "news"; ``ticker`` is uppercase symbol.
-        self._subs: Dict[str, Dict[str, List["asyncio.Queue[Dict[str, Any]]"]]] = {
+        self._subs: dict[str, dict[str, list[asyncio.Queue[dict[str, Any]]]]] = {
             "price": {}, "news": {},
         }
         # Price tickers to poll even before a browser opens a WebSocket.
         # Values are source tokens, so independent features can warm and
         # unwarm the same ticker without stepping on each other.
-        self._warm_price_tickers: Dict[str, Set[str]] = {}
-        self._state: Dict[str, TickerState] = {}
-        self._task: Optional[asyncio.Task] = None
+        self._warm_price_tickers: dict[str, set[str]] = {}
+        self._state: dict[str, TickerState] = {}
+        self._task: asyncio.Task | None = None
         self._stop = False
 
     # ---- Public lifecycle ------------------------------------------
@@ -86,19 +87,17 @@ class Broadcaster:
         self._stop = True
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._task
-            except (asyncio.CancelledError, Exception):
-                pass
 
     # ---- Subscription API ------------------------------------------
 
     async def subscribe(self, channel: str, ticker: str
-                       ) -> "asyncio.Queue[Dict[str, Any]]":
+                       ) -> asyncio.Queue[dict[str, Any]]:
         ticker = ticker.upper()
         if channel not in self._subs:
             raise ValueError(f"unknown channel {channel!r}")
-        q: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue()
+        q: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         async with self._lock:
             self._subs[channel].setdefault(ticker, []).append(q)
             self._state.setdefault(ticker, TickerState(ticker=ticker))
@@ -108,15 +107,13 @@ class Broadcaster:
         return q
 
     async def unsubscribe(self, channel: str, ticker: str,
-                          q: "asyncio.Queue[Dict[str, Any]]") -> None:
+                          q: asyncio.Queue[dict[str, Any]]) -> None:
         ticker = ticker.upper()
         async with self._lock:
             queues = self._subs.get(channel, {}).get(ticker)
             if queues:
-                try:
+                with contextlib.suppress(ValueError):
                     queues.remove(q)
-                except ValueError:
-                    pass
                 if not queues:
                     del self._subs[channel][ticker]
 
@@ -138,7 +135,7 @@ class Broadcaster:
                 del self._warm_price_tickers[ticker]
 
     async def _send_initial_snapshot(self, channel: str, ticker: str,
-                                     q: "asyncio.Queue[Dict[str, Any]]") -> None:
+                                     q: asyncio.Queue[dict[str, Any]]) -> None:
         st = self._state.get(ticker)
         if not st:
             return
@@ -146,7 +143,7 @@ class Broadcaster:
             await q.put(self._price_event(st))
         # No initial news snapshot — clients will get the next batch.
 
-    def _price_event(self, st: TickerState) -> Dict[str, Any]:
+    def _price_event(self, st: TickerState) -> dict[str, Any]:
         return {
             "type": "price",
             "ticker": st.ticker,
@@ -160,7 +157,7 @@ class Broadcaster:
 
     # ---- Polling loop ---------------------------------------------
 
-    def _active_tickers(self, channel: str) -> Set[str]:
+    def _active_tickers(self, channel: str) -> set[str]:
         tickers = set(self._subs.get(channel, {}).keys())
         if channel == "price":
             tickers.update(self._warm_price_tickers.keys())
@@ -181,7 +178,7 @@ class Broadcaster:
 
             await asyncio.sleep(PRICE_INTERVAL)
 
-    async def _poll_prices(self, tickers: Set[str]) -> None:
+    async def _poll_prices(self, tickers: set[str]) -> None:
         if not tickers:
             return
         for ticker in tickers:
@@ -208,12 +205,10 @@ class Broadcaster:
 
             event = self._price_event(st)
             for q in list(self._subs.get("price", {}).get(ticker, [])):
-                try:
+                with contextlib.suppress(asyncio.QueueFull):
                     q.put_nowait(event)
-                except asyncio.QueueFull:
-                    pass
 
-    async def _poll_news(self, tickers: Set[str]) -> None:
+    async def _poll_news(self, tickers: set[str]) -> None:
         if not tickers:
             return
         for ticker in tickers:
@@ -238,15 +233,13 @@ class Broadcaster:
             for article in new:
                 event = {"type": "news", "ticker": ticker, **article}
                 for q in list(self._subs.get("news", {}).get(ticker, [])):
-                    try:
+                    with contextlib.suppress(asyncio.QueueFull):
                         q.put_nowait(event)
-                    except asyncio.QueueFull:
-                        pass
 
 
 # ---- Sync helpers (called via asyncio.to_thread) ---------------------
 
-def _fetch_price(ticker: str) -> tuple[Optional[float], Optional[float], Optional[float], Optional[int]]:
+def _fetch_price(ticker: str) -> tuple[float | None, float | None, float | None, int | None]:
     """Pull last/prev close from yfinance. Synchronous — call via to_thread."""
     t = yf.Ticker(ticker)
     fast = t.fast_info if hasattr(t, "fast_info") else None
@@ -273,11 +266,11 @@ def _fetch_price(ticker: str) -> tuple[Optional[float], Optional[float], Optiona
     return last, change, pct, vol
 
 
-def _fetch_news(ticker: str) -> List[Dict[str, Any]]:
+def _fetch_news(ticker: str) -> list[dict[str, Any]]:
     """Pull recent news articles. Synchronous."""
     t = yf.Ticker(ticker)
     raw = t.get_news(count=15) if hasattr(t, "get_news") else (t.news or [])
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for a in raw:
         # yfinance switches between flat and nested envelopes.
         if isinstance(a, dict) and "content" in a:

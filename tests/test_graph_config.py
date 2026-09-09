@@ -168,9 +168,9 @@ def test_graph_propagate_passes_run_exception_to_checkpointer_exit():
         patch("tradingagents.graph.trading_graph.get_checkpointer", return_value=checkpointer),
         patch("tradingagents.graph.trading_graph.checkpoint_step", return_value=None),
         pytest.raises(RuntimeError, match="graph failed"),
+        graph.checkpoint_scope("NVDA", "2026-01-10"),
     ):
-        with graph.checkpoint_scope("NVDA", "2026-01-10"):
-            raise RuntimeError("graph failed")
+        raise RuntimeError("graph failed")
 
     assert checkpointer.exit_args[0] is RuntimeError
     assert str(checkpointer.exit_args[1]) == "graph failed"

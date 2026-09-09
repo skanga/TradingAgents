@@ -2,10 +2,10 @@
 
 from fastapi import APIRouter
 
-from tradingagents.agents.utils.memory import TradingMemoryLog
-from tradingagents.default_config import DEFAULT_CONFIG
 from gui.log_browser import memory_log_path
 from service.schemas import MemoryEntry, MemoryResponse
+from tradingagents.agents.utils.memory import TradingMemoryLog
+from tradingagents.default_config import DEFAULT_CONFIG
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 

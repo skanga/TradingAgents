@@ -2,10 +2,10 @@
 
 import streamlit as st
 
-from tradingagents.agents.utils.memory import TradingMemoryLog
-from tradingagents.default_config import DEFAULT_CONFIG
 from gui.log_browser import memory_log_path, read_memory_log
 from gui.md_utils import safe_md
+from tradingagents.agents.utils.memory import TradingMemoryLog
+from tradingagents.default_config import DEFAULT_CONFIG
 
 st.set_page_config(page_title="Memory · TradingAgents", layout="wide")
 

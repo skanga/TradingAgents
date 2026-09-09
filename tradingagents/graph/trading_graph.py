@@ -5,9 +5,9 @@ import logging
 import math
 import os
 from contextlib import contextmanager
-from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any
 
 import yfinance as yf
 from langgraph.prebuilt import ToolNode
@@ -17,20 +17,20 @@ from tradingagents.agents.utils.agent_utils import (
     get_cashflow,
     get_fundamentals,
     get_global_news,
-    get_indicators,
     get_income_statement,
+    get_indicators,
     get_insider_transactions,
-    get_news,
     get_macro_indicators,
+    get_news,
     get_prediction_markets,
     get_stock_data,
     get_verified_market_snapshot,
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog, outcome_known_by
 from tradingagents.dataflows.config import reset_config, use_config
+from tradingagents.dataflows.news_evidence import news_run_scope
 from tradingagents.dataflows.symbol_utils import normalize_symbol
 from tradingagents.dataflows.utils import safe_ticker_component
-from tradingagents.dataflows.news_evidence import news_run_scope
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_report_tree
@@ -84,8 +84,8 @@ class TradingAgentsGraph:
         self,
         selected_analysts=None,
         debug=False,
-        config: Dict[str, Any] | None = None,
-        callbacks: Optional[List] = None,
+        config: dict[str, Any] | None = None,
+        callbacks: list | None = None,
     ):
         """Initialize the trading agents graph and components.
 
@@ -142,7 +142,7 @@ class TradingAgentsGraph:
 
         self.deep_thinking_llm = deep_client.get_llm()
         self.quick_thinking_llm = quick_client.get_llm()
-        
+
         self.memory_log = TradingMemoryLog(self.config)
 
         # Create tool nodes
@@ -205,7 +205,7 @@ class TradingAgentsGraph:
             ) from exc
         return parsed.strftime("%Y-%m-%d")
 
-    def _get_provider_kwargs(self) -> Dict[str, Any]:
+    def _get_provider_kwargs(self) -> dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
         kwargs = {}
         provider = self._require_config_str("llm_provider").lower()
@@ -240,7 +240,7 @@ class TradingAgentsGraph:
 
         return kwargs
 
-    def _create_tool_nodes(self) -> Dict[str, ToolNode]:
+    def _create_tool_nodes(self) -> dict[str, ToolNode]:
         """Create tool nodes for different data sources using abstract methods."""
         return {
             "market": ToolNode(
@@ -336,7 +336,7 @@ class TradingAgentsGraph:
             bench_dates = bench.index.strftime("%Y-%m-%d")
             if stock_dates.has_duplicates or bench_dates.has_duplicates:
                 raise ValueError("Duplicate session dates in outcome prices")
-            benchmark_closes = dict(zip(bench_dates, bench["Close"]))
+            benchmark_closes = dict(zip(bench_dates, bench["Close"], strict=False))
             first, last = stock_dates[0], stock_dates[actual_days]
             prices = [
                 float(stock["Close"].iloc[0]), float(stock["Close"].iloc[actual_days]),
@@ -555,7 +555,10 @@ class TradingAgentsGraph:
         """Execute the graph and write the resulting state to disk and memory log."""
         # Initialize state — inject memory log context for PM.
         past_context, namespace = TradingAgentsGraph.prepare_memory(self, company_name, trade_date)
-        from tradingagents.agents.utils.agent_utils import build_instrument_context, resolve_instrument_identity
+        from tradingagents.agents.utils.agent_utils import (
+            build_instrument_context,
+            resolve_instrument_identity,
+        )
 
         instrument_context = build_instrument_context(
             company_name, asset_type, resolve_instrument_identity(company_name, curr_date=trade_date)

@@ -127,9 +127,9 @@ def test_namespace_selection_and_checkpoint_identity():
 
 
 def test_gui_stream_uses_shared_memory_boundary(tmp_path, monkeypatch):
+    import tradingagents.graph.trading_graph as graph_module
     from gui import runner_worker
     from tradingagents.default_config import DEFAULT_CONFIG
-    import tradingagents.graph.trading_graph as graph_module
 
     graph = Mock()
     graph.prepare_memory.return_value = ("safe context", "simulation")

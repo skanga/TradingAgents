@@ -1,6 +1,6 @@
-from gui.config import _empty_config
 from gui import storage
 from gui.chat import _llm_settings, quick_think_label
+from gui.config import _empty_config
 from service.schemas import RunCreateRequest
 
 

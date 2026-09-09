@@ -1,6 +1,6 @@
 """No live calls: runtime review and disagreement are deterministic contracts."""
-from copy import deepcopy
 import json
+from copy import deepcopy
 from unittest.mock import Mock
 
 import pytest
@@ -140,8 +140,8 @@ def test_cannot_cite_a_quote_omitted_by_prompt_budget():
 
 def test_reviewed_results_cannot_enter_memory_or_allocation(tmp_path):
     from tradingagents.agents.utils.memory import TradingMemoryLog
-    from tradingagents.batch import extract_ticker_result, PortfolioHolding
     from tradingagents.allocation import build_allocation_plan
+    from tradingagents.batch import PortfolioHolding, extract_ticker_result
     result = guarded(Mock(), "Rating: Hold")
     memory = TradingMemoryLog({"memory_log_path": str(tmp_path / "memory.jsonl")})
     memory.store_decision("AAPL", "2024-01-15", result["final_trade_decision"], namespace="simulation")
@@ -158,9 +158,11 @@ def test_reviewed_results_cannot_enter_memory_or_allocation(tmp_path):
 @pytest.mark.parametrize("proposal", ["Hold", "Buy"])
 def test_review_is_checkpointed_and_wired_into_graph_setup(monkeypatch, proposal):
     from dataclasses import replace
+
+    from langgraph.checkpoint.memory import InMemorySaver
+
     from tradingagents.graph import setup
     from tradingagents.graph.conditional_logic import ConditionalLogic
-    from langgraph.checkpoint.memory import InMemorySaver
     # Use the real topology, replacing generation only.
     spec = setup.ANALYST_SPECS["market"]
     monkeypatch.setitem(setup.ANALYST_SPECS, "market", replace(spec, create_node=lambda llm: lambda s: {
@@ -192,6 +194,7 @@ def test_review_is_checkpointed_and_wired_into_graph_setup(monkeypatch, proposal
 @pytest.mark.parametrize("rating", ["Buy", "Overweight", "Underweight", "Sell"])
 def test_real_langchain_message_conversion_and_original_manager_fallback(rating):
     from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
     from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
     llm = FakeListChatModel(responses=[f"Rating: {rating}", answer(rating).content, answer(rating).content])
     result = review.with_decision_review(create_portfolio_manager(llm), llm)(state())

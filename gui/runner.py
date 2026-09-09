@@ -13,29 +13,29 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import signal
 import subprocess
 import sys
 import tempfile
 import threading
-import queue
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
 class RunnerHandle:
     proc: subprocess.Popen
-    events: "queue.Queue[Dict[str, Any]]"
+    events: queue.Queue[dict[str, Any]]
     reader_thread: threading.Thread
-    stderr_buf: List[str] = field(default_factory=list)
-    job_path: Optional[Path] = None
+    stderr_buf: list[str] = field(default_factory=list)
+    job_path: Path | None = None
     finished: bool = False
-    return_code: Optional[int] = None
+    return_code: int | None = None
     drained: bool = False
 
-    def poll_events(self) -> List[Dict[str, Any]]:
+    def poll_events(self) -> list[dict[str, Any]]:
         """Drain whatever events have arrived since the last call.
 
         ``drained`` flips true only once the subprocess has exited AND the
@@ -43,7 +43,7 @@ class RunnerHandle:
         guaranteed to be in the queue. Until both happen we don't claim
         the run is over even if ``proc.poll()`` says it exited.
         """
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         while True:
             try:
                 out.append(self.events.get_nowait())
@@ -79,7 +79,7 @@ class RunnerHandle:
             pass
 
 
-def _reader(stream, q: "queue.Queue[Dict[str, Any]]") -> None:
+def _reader(stream, q: queue.Queue[dict[str, Any]]) -> None:
     for line in iter(stream.readline, ""):
         line = line.strip()
         if not line:
@@ -91,24 +91,23 @@ def _reader(stream, q: "queue.Queue[Dict[str, Any]]") -> None:
     stream.close()
 
 
-def _stderr_reader(stream, buf: List[str]) -> None:
+def _stderr_reader(stream, buf: list[str]) -> None:
     for line in iter(stream.readline, ""):
         if line:
             buf.append(line)
     stream.close()
 
 
-def launch(job: Dict[str, Any], *, env: Optional[Dict[str, str]] = None) -> RunnerHandle:
+def launch(job: dict[str, Any], *, env: dict[str, str] | None = None) -> RunnerHandle:
     """Spawn the worker subprocess and return a handle.
 
     ``job`` is dumped to a temp JSON file the worker reads at startup. ``env``
     overrides the default subprocess environment — pass the API-key-augmented
     env from ``gui.config.export_env`` so provider keys reach the worker.
     """
-    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
-    json.dump(job, tmp)
-    tmp.close()
-    job_path = Path(tmp.name)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as tmp:
+        json.dump(job, tmp)
+        job_path = Path(tmp.name)
 
     repo_root = Path(__file__).resolve().parent.parent
     cmd = [sys.executable, "-u", "-m", "gui.runner_worker", str(job_path)]
@@ -123,8 +122,8 @@ def launch(job: Dict[str, Any], *, env: Optional[Dict[str, str]] = None) -> Runn
         bufsize=1,
     )
 
-    q: "queue.Queue[Dict[str, Any]]" = queue.Queue()
-    stderr_buf: List[str] = []
+    q: queue.Queue[dict[str, Any]] = queue.Queue()
+    stderr_buf: list[str] = []
     reader = threading.Thread(target=_reader, args=(proc.stdout, q), daemon=True)
     reader.start()
     threading.Thread(target=_stderr_reader, args=(proc.stderr, stderr_buf), daemon=True).start()

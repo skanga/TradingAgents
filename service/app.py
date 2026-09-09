@@ -13,14 +13,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from gui import storage
-from service.runner_pool import pool
-from service.streaming import broadcaster
 from service.routers import (
     briefs,
     calendar as calendar_router,
@@ -39,6 +37,8 @@ from service.routers import (
     streaming,
     watchlist,
 )
+from service.runner_pool import pool
+from service.streaming import broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +95,8 @@ async def _startup() -> None:
     # Pre-warm the broadcaster with watchlist tickers so prices show up
     # without a manual subscribe.
     for entry in storage.list_watchlist():
-        try:
+        with suppress(Exception):
             await broadcaster.warm_ticker(entry["ticker"], source="watchlist")
-        except Exception:
-            pass
     logger.info("TradingAgents API ready. CORS origins: %s", _allowed_origins())
 
 

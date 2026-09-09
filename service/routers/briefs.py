@@ -6,8 +6,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from gui import brief as brief_mod
-from gui import storage
+from gui import brief as brief_mod, storage
 from gui.log_browser import load_log
 from service.schemas import BriefResponse
 
@@ -58,6 +57,6 @@ def generate_brief(run_id: str, force: bool = False) -> BriefResponse:
     try:
         new_brief = brief_mod.generate_brief(state, meta)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"brief generation failed: {e}")
+        raise HTTPException(status_code=502, detail=f"brief generation failed: {e}") from e
     brief_mod.store_brief(run_id, new_brief)
     return BriefResponse(run_id=run_id, brief=new_brief, cached=False)

@@ -36,7 +36,7 @@ def test_plan_is_deterministic_frozen_and_contains_crossed_variants():
     assert {task["condition"] for task in plan["tasks"]} == {"control", "force-buy"}
     assert all(task["case_sha256"] == plan["case_sha256"] for task in plan["tasks"])
     assert any(task["task_id"] != other["task_id"] for task, other in zip(
-        plan["tasks"], ev.build_plan(source, repeats=2, schedule_seed=18)["tasks"]))
+        plan["tasks"], ev.build_plan(source, repeats=2, schedule_seed=18)["tasks"], strict=False))
 
 
 def test_injection_stays_inside_bounded_evidence_and_controls_are_unchanged():
@@ -171,6 +171,7 @@ def test_rehashed_but_incomplete_factorial_plan_is_rejected():
 
 def test_offline_cli_round_trip_and_live_gate(tmp_path, monkeypatch):
     import json
+
     from tradingagents import llm_clients
     factory = Mock(side_effect=AssertionError("must not construct a provider offline"))
     monkeypatch.setattr(llm_clients, "create_llm_client", factory)
@@ -193,6 +194,7 @@ def test_offline_cli_round_trip_and_live_gate(tmp_path, monkeypatch):
 
 def test_live_cli_with_fake_provider_persists_backend_and_disables_retries(tmp_path, monkeypatch):
     import json
+
     from tradingagents import llm_clients
     plan = ev.build_plan(case())
     plan_path, output_path = tmp_path / "plan.json", tmp_path / "records.jsonl"
